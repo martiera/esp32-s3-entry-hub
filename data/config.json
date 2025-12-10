@@ -1,0 +1,55 @@
+{
+    "device": {
+        "name": "ESP32-EntryHub",
+        "version": "1.0.0",
+        "configured": true
+    },
+    "network": {
+        "wifi_ssid": "",
+        "hostname": "entryhub"
+    },
+    "mqtt": {
+        "enabled": true,
+        "broker": "192.168.1.100",
+        "port": 1883
+    },
+    "voice": {
+        "wake_word": "jarvis",
+        "sensitivity": 0.5,
+        "enabled": true
+    },
+    "display": {
+        "enabled": false,
+        "brightness": 255,
+        "auto_sleep": true,
+        "sleep_timeout": 60000
+    },
+    "weather": {
+        "provider": "none",
+        "openweathermap": {
+            "api_key": "",
+            "city": "",
+            "units": "metric"
+        },
+        "home_assistant": {
+            "entity_id": "weather.forecast_home"
+        }
+    },
+    "integrations": {
+        "home_assistant": {
+            "enabled": true,
+            "discovery": true,
+            "url": "http://192.168.88.44:8123",
+            "token": ""
+        },
+        "weather": {
+            "enabled": false,
+            "api_key": "",
+            "location": "London"
+        },
+        "calendar": {
+            "enabled": false,
+            "url": ""
+        }
+    }
+}

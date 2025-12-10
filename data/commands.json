@@ -1,0 +1,74 @@
+{
+    "commands": [
+        {
+            "id": 1,
+            "command": "turn on the lights",
+            "action": "homeassistant:light.living_room:on",
+            "category": "Lighting",
+            "enabled": true
+        },
+        {
+            "id": 2,
+            "command": "turn off the lights",
+            "action": "homeassistant:light.living_room:off",
+            "category": "Lighting",
+            "enabled": true
+        },
+        {
+            "id": 3,
+            "command": "lock the door",
+            "action": "homeassistant:lock.front_door:lock",
+            "category": "Security",
+            "enabled": true
+        },
+        {
+            "id": 4,
+            "command": "unlock the door",
+            "action": "homeassistant:lock.front_door:unlock",
+            "category": "Security",
+            "enabled": true
+        },
+        {
+            "id": 5,
+            "command": "open the garage",
+            "action": "homeassistant:cover.garage_door:open",
+            "category": "Access",
+            "enabled": true
+        },
+        {
+            "id": 6,
+            "command": "close the garage",
+            "action": "homeassistant:cover.garage_door:close",
+            "category": "Access",
+            "enabled": true
+        },
+        {
+            "id": 7,
+            "command": "good night",
+            "action": "scene:good_night",
+            "category": "Scenes",
+            "enabled": true
+        },
+        {
+            "id": 8,
+            "command": "welcome home",
+            "action": "scene:welcome_home",
+            "category": "Scenes",
+            "enabled": true
+        },
+        {
+            "id": 9,
+            "command": "what's the weather",
+            "action": "query:weather",
+            "category": "Information",
+            "enabled": true
+        },
+        {
+            "id": 10,
+            "command": "what time is it",
+            "action": "query:time",
+            "category": "Information",
+            "enabled": true
+        }
+    ]
+}

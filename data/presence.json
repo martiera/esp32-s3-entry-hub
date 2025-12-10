@@ -1,0 +1,28 @@
+{
+    "people": [
+        {
+            "id": 1,
+            "name": "John",
+            "avatar": "👨",
+            "devices": [
+                "john_phone"
+            ],
+            "present": false,
+            "location": "Unknown",
+            "last_seen": 0
+        },
+        {
+            "id": 2,
+            "name": "Jane",
+            "avatar": "👩",
+            "devices": [
+                "jane_phone"
+            ],
+            "present": false,
+            "location": "Unknown",
+            "last_seen": 0
+        }
+    ],
+    "tracking_method": "mqtt",
+    "timeout": 300000
+}

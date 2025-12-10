@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entry Hub Admin Panel</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h1>🏠 Entry Hub</h1>
+                <p class="version">v1.0.0</p>
+            </div>
+            
+            <nav class="nav">
+                <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                    <span class="icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#voice" class="nav-item" data-page="voice">
+                    <span class="icon">🎤</span>
+                    <span>Voice Control</span>
+                </a>
+                <a href="#presence" class="nav-item" data-page="presence">
+                    <span class="icon">👥</span>
+                    <span>Presence</span>
+                </a>
+                <a href="#scenes" class="nav-item" data-page="scenes">
+                    <span class="icon">💡</span>
+                    <span>Scenes</span>
+                </a>
+                <a href="#integrations" class="nav-item" data-page="integrations">
+                    <span class="icon">🔗</span>
+                    <span>Integrations</span>
+                </a>
+                <a href="#config" class="nav-item" data-page="config">
+                    <span class="icon">⚙️</span>
+                    <span>Configuration</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot" id="connectionStatus"></span>
+                    <span id="connectionText">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <section id="page-dashboard" class="page active">
+                <div class="page-header">
+                    <h2>Dashboard</h2>
+                    <p>System overview and quick actions</p>
+                </div>
+
+                <div class="grid-3">
+                    <!-- System Status -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>System Status</h3>
+                            <span class="badge badge-success" id="systemStatus">Online</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="stat-row">
+                                <span class="stat-label">Uptime</span>
+                                <span class="stat-value" id="uptime">0s</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Free Memory</span>
+                                <span class="stat-value" id="freeHeap">0 KB</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">WiFi Signal</span>
+                                <span class="stat-value" id="wifiSignal">0 dBm</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Voice Recognition -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Voice Recognition</h3>
+                            <span class="badge" id="voiceStatus">Inactive</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="voice-indicator">
+                                <div class="wave-bars">
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                </div>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Wake Word</span>
+                                <span class="stat-value" id="wakeWord">Jarvis</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Last Detection</span>
+                                <span class="stat-value" id="lastDetection">Never</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Weather Widget -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Weather</h3>
+                        </div>
+                        <div class="card-body weather-widget">
+                            <div class="weather-icon">☀️</div>
+                            <div class="weather-temp" id="weatherTemp">--°C</div>
+                            <div class="weather-condition" id="weatherCondition">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Presence at a Glance -->
+                <div class="card mt-20">
+                    <div class="card-header">
+                        <h3>Family Presence</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="presence-grid" id="presenceQuick">
+                            <div class="presence-item">
+                                <span class="presence-avatar">👨</span>
+                                <span class="presence-name">Loading...</span>
+                                <span class="presence-badge">Away</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card mt-20">
+                    <div class="card-header">
+                        <h3>Quick Actions</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="action-grid">
+                            <button class="action-btn" onclick="triggerScene('welcome_home')">
+                                <span class="action-icon">🏡</span>
+                                <span>Welcome Home</span>
+                            </button>
+                            <button class="action-btn" onclick="triggerScene('good_night')">
+                                <span class="action-icon">🌙</span>
+                                <span>Good Night</span>
+                            </button>
+                            <button class="action-btn" onclick="triggerScene('movie_time')">
+                                <span class="action-icon">🎬</span>
+                                <span>Movie Time</span>
+                            </button>
+                            <button class="action-btn" onclick="triggerScene('away_mode')">
+                                <span class="action-icon">🚪</span>
+                                <span>Away Mode</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Voice Control Page -->
+            <section id="page-voice" class="page">
+                <div class="page-header">
+                    <h2>Voice Control</h2>
+                    <p>Manage wake words and voice commands</p>
+                </div>
+
+                <!-- Wake Word Configuration -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Wake Word Settings</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="wakeWordSelect">Active Wake Word</label>
+                            <select id="wakeWordSelect" class="form-control">
+                                <option value="jarvis">Jarvis</option>
+                                <option value="alexa">Alexa</option>
+                                <option value="computer">Computer</option>
+                                <option value="hey_google">Hey Google</option>
+                                <option value="custom">Custom...</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="sensitivitySlider">Sensitivity: <span id="sensitivityValue">50</span>%</label>
+                            <input type="range" id="sensitivitySlider" class="slider" min="0" max="100" value="50">
+                        </div>
+                        <button class="btn btn-primary" onclick="saveWakeWordSettings()">Save Settings</button>
+                    </div>
+                </div>
+
+                <!-- Voice Commands -->
+                <div class="card mt-20">
+                    <div class="card-header">
+                        <h3>Voice Commands</h3>
+                        <button class="btn btn-sm btn-primary" onclick="showAddCommandModal()">+ Add Command</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Command</th>
+                                        <th>Action</th>
+                                        <th>Category</th>
+                                        <th>Enabled</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="commandsTable">
+                                    <tr>
+                                        <td colspan="5" class="text-center">Loading commands...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Presence Page -->
+            <section id="page-presence" class="page">
+                <div class="page-header">
+                    <h2>Presence Tracking</h2>
+                    <p>Monitor family member locations and status</p>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Family Members</h3>
+                            <button class="btn btn-sm btn-primary" onclick="showAddPersonModal()">+ Add Person</button>
+                        </div>
+                        <div class="card-body">
+                            <div id="peopleList" class="people-list">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Activity Timeline</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="activityTimeline" class="timeline">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Scenes Page -->
+            <section id="page-scenes" class="page">
+                <div class="page-header">
+                    <h2>Scene Control</h2>
+                    <p>Control lights, locks, and automation scenes</p>
+                </div>
+
+                <div class="scenes-grid">
+                    <div class="scene-card" onclick="triggerScene('welcome_home')">
+                        <div class="scene-icon">🏡</div>
+                        <h3>Welcome Home</h3>
+                        <p>Unlock door, turn on lights, adjust temperature</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+
+                    <div class="scene-card" onclick="triggerScene('good_morning')">
+                        <div class="scene-icon">🌅</div>
+                        <h3>Good Morning</h3>
+                        <p>Gradual lights, start coffee, morning news</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+
+                    <div class="scene-card" onclick="triggerScene('movie_time')">
+                        <div class="scene-icon">🎬</div>
+                        <h3>Movie Time</h3>
+                        <p>Dim lights, close blinds, activate theater mode</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+
+                    <div class="scene-card" onclick="triggerScene('good_night')">
+                        <div class="scene-icon">🌙</div>
+                        <h3>Good Night</h3>
+                        <p>Lock doors, turn off lights, arm security</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+
+                    <div class="scene-card" onclick="triggerScene('away_mode')">
+                        <div class="scene-icon">🚪</div>
+                        <h3>Away Mode</h3>
+                        <p>Lock everything, arm alarm, random lights</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+
+                    <div class="scene-card" onclick="triggerScene('party_mode')">
+                        <div class="scene-icon">🎉</div>
+                        <h3>Party Mode</h3>
+                        <p>Colorful lights, unlock door, music on</p>
+                        <button class="btn btn-primary">Activate</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Integrations Page -->
+            <section id="page-integrations" class="page">
+                <div class="page-header">
+                    <h2>Integrations</h2>
+                    <p>Connect with external services</p>
+                </div>
+
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Home Assistant</h3>
+                            <span class="badge badge-warning" id="haStatus">Not Connected</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="haConnectionInfo" style="display: none; margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-tertiary); border-radius: 0.5rem;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">
+                                    <div><strong>Version:</strong> <span id="haVersion">--</span></div>
+                                    <div><strong>Location:</strong> <span id="haLocation">--</span></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Home Assistant URL</label>
+                                <input type="url" id="haUrl" placeholder="http://192.168.88.44:8123" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Access Token</label>
+                                <input type="password" id="haToken" placeholder="Long-lived access token" class="form-control">
+                            </div>
+                            <button class="btn btn-primary" onclick="saveHomeAssistant()">Save Settings</button>
+                            <button class="btn btn-secondary" onclick="testHomeAssistantConnection()">Test Connection</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Weather API</h3>
+                            <span class="badge badge-warning" id="weatherStatus">Not Configured</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>Weather Provider</label>
+                                <select id="weatherProvider" class="form-control" onchange="toggleWeatherProvider()">
+                                    <option value="none">None - Disabled</option>
+                                    <option value="openweathermap">OpenWeatherMap</option>
+                                    <option value="homeassistant">Home Assistant</option>
+                                </select>
+                            </div>
+
+                            <!-- None/Disabled Settings -->
+                            <div id="noneSettings" style="display: none;">
+                                <p class="help-text">Weather integration is disabled. Click Save to confirm.</p>
+                                <button class="btn btn-primary" onclick="saveWeatherSettings()">Save Settings</button>
+                            </div>
+
+                            <!-- OpenWeatherMap Settings -->
+                            <div id="owmSettings" style="display: none;">
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="owmApiKey" placeholder="Get from openweathermap.org" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>City</label>
+                                    <input type="text" id="owmCity" placeholder="Riga,LV" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Units</label>
+                                    <select id="owmUnits" class="form-control">
+                                        <option value="metric">Metric (°C)</option>
+                                        <option value="imperial">Imperial (°F)</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-primary" onclick="saveWeatherSettings()">Save Settings</button>
+                                <button class="btn btn-secondary" onclick="testWeather()">Test Connection</button>
+                            </div>
+
+                            <!-- Home Assistant Weather Settings -->
+                            <div id="haWeatherSettings" style="display: none;">
+                                <div class="form-group">
+                                    <label>Weather Entity ID</label>
+                                    <input type="text" id="haWeatherEntity" placeholder="weather.forecast_home" class="form-control">
+                                </div>
+                                <p class="help-text">Make sure Home Assistant URL and token are configured above</p>
+                                <button class="btn btn-primary" onclick="saveWeatherSettings()">Save Settings</button>
+                                <button class="btn btn-secondary" onclick="testWeather()">Test Connection</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Calendar Sync</h3>
+                            <span class="badge badge-warning">Not Configured</span>
+                        </div>
+                        <div class="card-body">
+                            <p>Sync with Google Calendar or iCal for upcoming events.</p>
+                            <button class="btn btn-secondary">Setup</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>MQTT Broker</h3>
+                            <span class="badge badge-success" id="mqttStatus">Connected</span>
+                        </div>
+                        <div class="card-body">
+                            <p>Connected to MQTT broker for real-time communication.</p>
+                            <button class="btn btn-secondary">Configure</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Configuration Page -->
+            <section id="page-config" class="page">
+                <div class="page-header">
+                    <h2>Configuration</h2>
+                    <p>System and network settings</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Network Settings</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>WiFi SSID</label>
+                            <input type="text" class="form-control" id="wifiSSID" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>IP Address</label>
+                            <input type="text" class="form-control" id="ipAddress" readonly>
+                        </div>
+                        <button class="btn btn-secondary" onclick="resetWiFi()">Reset WiFi Settings</button>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">
+                        <h3>System Actions</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="action-grid">
+                            <button class="btn btn-warning" onclick="rebootDevice()">Reboot Device</button>
+                            <button class="btn btn-danger" onclick="factoryReset()">Factory Reset</button>
+                            <a href="/update" class="btn btn-primary">Update Firmware</a>
+                            <button class="btn btn-secondary" onclick="exportConfig()">Export Config</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+#ifndef WEB_SERVER_H
+#define WEB_SERVER_H
+
+#include <ESPAsyncWebServer.h>
+#include <AsyncWebSocket.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <HTTPClient.h>
+
+class WebServerManager {
+public:
+    WebServerManager();
+    void begin();
+    void loop();
+    
+    void broadcastStatus(const JsonDocument& doc);
+    void broadcastMessage(const char* type, const char* message);
+    
+    AsyncWebServer server; // Made public for OTA manager
+    
+private:
+    AsyncWebSocket ws;
+    
+    void setupRoutes();
+    void setupWebSocket();
+    void setupAPIEndpoints();
+    
+    // Route handlers
+    void handleRoot(AsyncWebServerRequest *request);
+    void handleNotFound(AsyncWebServerRequest *request);
+    
+    // API handlers
+    void handleGetStatus(AsyncWebServerRequest *request);
+    void handleGetConfig(AsyncWebServerRequest *request);
+    void handlePostConfig(AsyncWebServerRequest *request);
+    void handleGetCommands(AsyncWebServerRequest *request);
+    void handlePostCommand(AsyncWebServerRequest *request);
+    void handleDeleteCommand(AsyncWebServerRequest *request);
+    void handleGetPresence(AsyncWebServerRequest *request);
+    void handlePostScene(AsyncWebServerRequest *request);
+    void handleGetWeather(AsyncWebServerRequest *request);
+    void handleOpenWeatherMap(AsyncWebServerRequest *request, JsonDocument& config);
+    void handleHomeAssistantWeather(AsyncWebServerRequest *request, JsonDocument& config);
+    void handleSaveWeatherConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
+    void handleSaveHomeAssistantConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
+    void handleTestHomeAssistant(AsyncWebServerRequest *request);
+    
+    // WebSocket handlers
+    static void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 
+                                 AwsEventType type, void *arg, uint8_t *data, size_t len);
+    void handleWebSocketMessage(void *arg, uint8_t *data, size_t len);
+};
+
+extern WebServerManager webServer;
+
+#endif
