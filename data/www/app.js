@@ -14,6 +14,14 @@ document.addEventListener('DOMContentLoaded', function() {
     startStatusUpdates();
 });
 
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('personSelectorModal');
+    if (event.target === modal) {
+        closePersonSelector();
+    }
+};
+
 // Navigation
 function initializeNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
@@ -152,7 +160,8 @@ async function loadInitialData() {
         loadSystemStatus(),
         loadCommands(),
         loadPresence(),
-        loadWeather()
+        loadWeather(),
+        loadIntegrations()
     ]);
 }
 
@@ -230,11 +239,31 @@ function renderCommandsTable(commands) {
 }
 
 async function loadPresence() {
-    const data = await apiGet('presence');
-    if (data && data.people) {
-        renderPresence(data.people);
-    } else {
-        // Show sample data
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await fetch('/api/presence', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data && data.people) {
+            renderPresence(data.people);
+        } else {
+            // Show sample data
+            renderPresence([
+                { name: 'John', avatar: '👨', present: true, location: 'Home', lastSeen: Date.now() },
+                { name: 'Jane', avatar: '👩', present: false, location: 'Work', lastSeen: Date.now() - 3600000 },
+                { name: 'Kids', avatar: '👧', present: true, location: 'Home', lastSeen: Date.now() }
+            ]);
+        }
+    } catch (error) {
+        console.error('Failed to load presence:', error);
+        // Show sample data on error
         renderPresence([
             { name: 'John', avatar: '👨', present: true, location: 'Home', lastSeen: Date.now() },
             { name: 'Jane', avatar: '👩', present: false, location: 'Work', lastSeen: Date.now() - 3600000 },
@@ -257,18 +286,28 @@ function renderPresence(people) {
     // Detailed view on presence page
     const peopleList = document.getElementById('peopleList');
     if (peopleList) {
-        peopleList.innerHTML = people.map(person => `
-            <div class="person-item">
-                <div class="person-info">
-                    <span class="person-avatar">${person.avatar}</span>
-                    <div>
-                        <div style="font-weight: 600;">${person.name}</div>
-                        <div style="font-size: 0.875rem; color: var(--text-muted);">${person.location}</div>
-                    </div>
+        if (people.length === 0) {
+            peopleList.innerHTML = `
+                <div style="padding: 2rem; text-align: center; color: var(--text-muted);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem;">👥</div>
+                    <p>No family members tracked yet.</p>
+                    <p style="font-size: 0.875rem;">Enable tracking above and click "+ Add Person" to get started.</p>
                 </div>
-                <span class="badge ${person.present ? 'badge-success' : 'badge-warning'}">${person.present ? 'Present' : 'Away'}</span>
-            </div>
-        `).join('');
+            `;
+        } else {
+            peopleList.innerHTML = people.map(person => `
+                <div class="person-item">
+                    <div class="person-info">
+                        <span class="person-avatar">${person.avatar}</span>
+                        <div>
+                            <div style="font-weight: 600;">${person.name}</div>
+                            <div style="font-size: 0.875rem; color: var(--text-muted);">${person.location}</div>
+                        </div>
+                    </div>
+                    <span class="badge ${person.present ? 'badge-success' : 'badge-warning'}">${person.present ? 'Present' : 'Away'}</span>
+                </div>
+            `).join('');
+        }
     }
 }
 
@@ -296,7 +335,8 @@ async function loadWeather() {
         const weatherIcon = document.querySelector('.weather-icon');
         
         if (data && !data.error && data.temperature !== undefined) {
-            document.getElementById('weatherTemp').textContent = `${data.temperature}°C`;
+            const temp = Math.round(data.temperature * 10) / 10; // Round to 1 decimal
+            document.getElementById('weatherTemp').textContent = `${temp}°C`;
             const description = data.description || data.state || 'Unknown';
             document.getElementById('weatherCondition').textContent = description;
             
@@ -322,6 +362,62 @@ async function loadWeather() {
     }
 }
 
+async function loadIntegrations() {
+    try {
+        const config = await apiGet('config');
+        if (config) {
+            updateIntegrationStatus(config);
+        }
+    } catch (error) {
+        console.error('Failed to load integrations:', error);
+    }
+}
+
+function updateIntegrationStatus(config) {
+    // Update Home Assistant status
+    if (config.integrations && config.integrations.home_assistant) {
+        const ha = config.integrations.home_assistant;
+        const haStatusElement = document.getElementById('haStatus');
+        
+        if (haStatusElement) {
+            if (ha.status === 'connected') {
+                haStatusElement.textContent = 'Connected';
+                haStatusElement.className = 'badge badge-success';
+            } else if (ha.status === 'failed') {
+                haStatusElement.textContent = 'Connection Failed';
+                haStatusElement.className = 'badge badge-danger';
+            } else if (ha.status === 'not_configured') {
+                haStatusElement.textContent = 'Not Configured';
+                haStatusElement.className = 'badge badge-warning';
+            } else {
+                haStatusElement.textContent = 'Unknown';
+                haStatusElement.className = 'badge';
+            }
+        }
+    }
+    
+    // Update Weather status
+    if (config.weather) {
+        const weatherStatusElement = document.getElementById('weatherStatus');
+        
+        if (weatherStatusElement) {
+            if (config.weather.status === 'connected') {
+                weatherStatusElement.textContent = 'Connected';
+                weatherStatusElement.className = 'badge badge-success';
+            } else if (config.weather.status === 'failed') {
+                weatherStatusElement.textContent = 'Connection Failed';
+                weatherStatusElement.className = 'badge badge-danger';
+            } else if (config.weather.status === 'not_configured') {
+                weatherStatusElement.textContent = 'Not Configured';
+                weatherStatusElement.className = 'badge badge-warning';
+            } else {
+                weatherStatusElement.textContent = 'Not Configured';
+                weatherStatusElement.className = 'badge badge-warning';
+            }
+        }
+    }
+}
+
 // Event Handlers
 function setupEventListeners() {
     // Sensitivity slider
@@ -334,9 +430,15 @@ function setupEventListeners() {
 }
 
 function startStatusUpdates() {
+    // Load initial status immediately
+    loadSystemStatus();
+    
+    // Only use periodic fallback if WebSocket is disconnected
     statusRefreshInterval = setInterval(() => {
-        loadSystemStatus();
-    }, 5000); // Update every 5 seconds
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            loadSystemStatus();
+        }
+    }, 10000); // Slower fallback - only when WebSocket is down
 }
 
 // Actions
@@ -523,6 +625,13 @@ async function loadWeatherConfig() {
             document.getElementById('haToken').value = config.integrations.home_assistant.token || '';
         }
         
+        // Person tracking settings
+        try {
+            loadPersonConfig(config);
+        } catch (error) {
+            console.error('Failed to load person config:', error);
+        }
+        
         toggleWeatherProvider();
         updateWeatherStatus(provider);
     } catch (error) {
@@ -654,6 +763,208 @@ async function testHomeAssistantConnection() {
         showNotification('Failed to test Home Assistant connection', 'error');
     }
 }
+
+// Person Tracking Functions
+let trackedPersons = [];
+
+function loadPersonConfig(config) {
+    const enabled = config.presence?.enabled || false;
+    const entityIds = config.presence?.home_assistant?.entity_ids || [];
+    
+    document.getElementById('personEnabled').checked = enabled;
+    trackedPersons = entityIds;
+    
+    togglePersonTracking();
+    renderTrackedPersons();
+    updatePersonStatus(enabled, entityIds.length);
+}
+
+async function togglePersonTracking() {
+    const enabled = document.getElementById('personEnabled').checked;
+    const settings = document.getElementById('personSettings');
+    settings.style.display = enabled ? 'block' : 'none';
+    
+    if (enabled) {
+        renderTrackedPersons();
+    } else {
+        // Save disabled state and refresh dashboard
+        await savePersonSettings();
+        loadPresence();
+    }
+}
+
+function renderTrackedPersons() {
+    const container = document.getElementById('trackedPersonsList');
+    
+    if (trackedPersons.length === 0) {
+        container.innerHTML = '<p class="help-text">No people tracked yet. Click "Add Person" to select from Home Assistant.</p>';
+        return;
+    }
+    
+    container.innerHTML = trackedPersons.map(entityId => {
+        const name = entityId.replace('person.', '').replace(/_/g, ' ');
+        const avatar = getPersonAvatar(name);
+        return `
+            <div class="tracked-person-item">
+                <div class="tracked-person-info">
+                    <span class="tracked-person-avatar">${avatar}</span>
+                    <div class="tracked-person-details">
+                        <div class="tracked-person-name">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
+                        <div class="tracked-person-id">${entityId}</div>
+                    </div>
+                </div>
+                <button class="btn-remove" onclick="removePerson('${entityId}')" title="Remove">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function getPersonAvatar(name) {
+    const lowerName = name.toLowerCase();
+    if (lowerName.includes('john') || lowerName.includes('dad') || lowerName.includes('father')) return '👨';
+    if (lowerName.includes('jane') || lowerName.includes('mom') || lowerName.includes('mother')) return '👩';
+    if (lowerName.includes('kid') || lowerName.includes('child') || lowerName.includes('son') || lowerName.includes('daughter')) return '👶';
+    if (lowerName.includes('boy')) return '👦';
+    if (lowerName.includes('girl')) return '👧';
+    return '👤';
+}
+
+function updatePersonStatus(enabled, count) {
+    // Update presence page badge
+    const statusBadgePage = document.getElementById('personStatusPage');
+    if (statusBadgePage) {
+        if (!enabled || count === 0) {
+            statusBadgePage.className = 'badge badge-warning';
+            statusBadgePage.textContent = 'Not Configured';
+        } else {
+            statusBadgePage.className = 'badge badge-success';
+            statusBadgePage.textContent = `Tracking ${count} ${count === 1 ? 'Person' : 'People'}`;
+        }
+    }
+}
+
+async function showPersonSelector() {
+    const modal = document.getElementById('personSelectorModal');
+    modal.style.display = 'block';
+    
+    const container = document.getElementById('availablePersonsList');
+    container.innerHTML = '<p class="help-text">Loading available persons from Home Assistant...</p>';
+    
+    try {
+        const response = await fetch('/api/homeassistant/persons');
+        const data = await response.json();
+        
+        if (data.error) {
+            container.innerHTML = `<p class="help-text" style="color: var(--danger);">${data.error}</p>`;
+            return;
+        }
+        
+        if (!data.persons || data.persons.length === 0) {
+            container.innerHTML = '<p class="help-text">No person entities found in Home Assistant.</p>';
+            return;
+        }
+        
+        container.innerHTML = data.persons.map(person => {
+            const isTracked = trackedPersons.includes(person.entity_id);
+            const name = person.name || person.entity_id.replace('person.', '').replace(/_/g, ' ');
+            const avatar = getPersonAvatar(name);
+            
+            return `
+                <div class="available-person-item ${isTracked ? 'disabled' : ''}" 
+                     onclick="${isTracked ? '' : `addPerson('${person.entity_id}', '${name}')`}">
+                    <div class="available-person-info">
+                        <span class="available-person-avatar">${avatar}</span>
+                        <div>
+                            <div style="font-weight: 600;">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
+                            <div style="font-size: 0.875rem; color: var(--text-muted);">${person.entity_id}</div>
+                        </div>
+                    </div>
+                    ${isTracked ? '<span class="badge badge-success">✓ Already tracked</span>' : '<span style="color: var(--text-muted);">Click to add</span>'}
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load persons:', error);
+        container.innerHTML = '<p class="help-text" style="color: var(--danger);">Failed to load persons. Make sure Home Assistant is configured.</p>';
+    }
+}
+
+function closePersonSelector() {
+    document.getElementById('personSelectorModal').style.display = 'none';
+}
+
+async function addPerson(entityId, name) {
+    if (trackedPersons.includes(entityId)) {
+        return;
+    }
+    
+    trackedPersons.push(entityId);
+    
+    // Enable tracking if not already enabled
+    const pageToggle = document.getElementById('personEnabledPage');
+    if (pageToggle && !pageToggle.checked) {
+        pageToggle.checked = true;
+    }
+    
+    await savePersonSettings();
+    showPersonSelector(); // Refresh the modal
+    showNotification(`Added ${name} to tracking`, 'success');
+    
+    // Refresh dashboard presence and people list
+    loadPresence();
+}
+
+async function removePerson(entityId) {
+    trackedPersons = trackedPersons.filter(id => id !== entityId);
+    await savePersonSettings();
+    renderTrackedPersons();
+    
+    const name = entityId.replace('person.', '').replace(/_/g, ' ');
+    showNotification(`Removed ${name} from tracking`, 'success');
+    
+    // Refresh dashboard presence
+    loadPresence();
+}
+
+async function savePersonSettings() {
+    const pageToggle = document.getElementById('personEnabledPage');
+    const enabled = pageToggle ? pageToggle.checked : false;
+    
+    // Load full config
+    try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        
+        // Update presence section
+        config.presence = {
+            enabled: enabled,
+            home_assistant: {
+                entity_ids: trackedPersons
+            }
+        };
+        
+        // Save full config
+        const saveResponse = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (saveResponse.ok) {
+            showNotification('Person tracking settings saved successfully', 'success');
+            updatePersonStatus(enabled, entityIds.length);
+            // Reload presence data
+            loadPresence();
+        } else {
+            showNotification('Failed to save person tracking settings', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save person settings:', error);
+        showNotification('Failed to save person tracking settings', 'error');
+    }
+}
+
+// Calendar Functions
 
 async function testWeather() {
     try {

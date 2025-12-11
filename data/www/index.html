@@ -39,7 +39,7 @@
                 </a>
                 <a href="#config" class="nav-item" data-page="config">
                     <span class="icon">⚙️</span>
-                    <span>Configuration</span>
+                    <span>Settings</span>
                 </a>
             </nav>
             
@@ -174,10 +174,10 @@
                     <p>Manage wake words and voice commands</p>
                 </div>
 
-                <!-- Wake Word Configuration -->
+                <!-- Wake Word Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Wake Word Settings</h3>
+                        <h3>Wake Word</h3>
                     </div>
                     <div class="card-body">
                         <div class="form-group">
@@ -234,11 +234,28 @@
                     <p>Monitor family member locations and status</p>
                 </div>
 
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h3>Settings</h3>
+                        <span class="badge badge-warning" id="personStatusPage">Not Configured</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="personEnabledPage" onchange="togglePersonTrackingPage()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span style="font-weight: 500;">Enable Home Assistant Person Tracking</span>
+                        </div>
+                        <p class="help-text" style="margin: 0;">Connect to Home Assistant to automatically track family members based on person entities.</p>
+                    </div>
+                </div>
+
                 <div class="grid-2">
                     <div class="card">
                         <div class="card-header">
                             <h3>Family Members</h3>
-                            <button class="btn btn-sm btn-primary" onclick="showAddPersonModal()">+ Add Person</button>
+                            <button class="btn btn-sm btn-primary" onclick="showPersonSelector()">+ Add Person</button>
                         </div>
                         <div class="card-body">
                             <div id="peopleList" class="people-list">
@@ -424,10 +441,10 @@
                 </div>
             </section>
 
-            <!-- Configuration Page -->
+            <!-- Settings Page -->
             <section id="page-config" class="page">
                 <div class="page-header">
-                    <h2>Configuration</h2>
+                    <h2>Settings</h2>
                     <p>System and network settings</p>
                 </div>
 
@@ -463,6 +480,21 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Person Selector Modal -->
+    <div id="personSelectorModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Person to Track</h3>
+                <span class="modal-close" onclick="closePersonSelector()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="availablePersonsList" class="available-persons-list">
+                    <p class="help-text">Loading available persons from Home Assistant...</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

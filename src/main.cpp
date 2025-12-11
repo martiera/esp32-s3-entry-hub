@@ -17,6 +17,7 @@
  */
 
 #include <Arduino.h>
+#include <HTTPClient.h>
 #include "config.h"
 #include "secrets.h"
 #include "wifi_manager.h"
@@ -36,6 +37,7 @@ bool systemReady = false;
 
 // Forward declarations
 void setupSystem();
+void testIntegrationsOnStartup(JsonDocument& config);
 void handleVoiceRecognition();
 void handleMqttMessages(const char* topic, const char* payload);
 void publishSystemStatus();
@@ -194,6 +196,11 @@ void setupSystem() {
         storage.saveConfig(config);
     }
     
+    // Test integrations if configured
+    Serial.print("\n→ Testing integrations... ");
+    testIntegrationsOnStartup(config);
+    Serial.println("✓");
+    
     // Publish initial status
     delay(2000);
     publishSystemStatus();
@@ -326,13 +333,107 @@ void publishSystemStatus() {
     // Publish to MQTT
     mqttClient.publishStatus("online");
     
-    // Broadcast to WebSocket clients
+    // Broadcast to WebSocket clients with same format as API
     JsonDocument doc;
     doc["type"] = "status";
-    doc["uptime"] = millis() / 1000;
-    doc["free_heap"] = ESP.getFreeHeap();
-    doc["wifi_rssi"] = WiFi.RSSI();
-    doc["recording"] = audioHandler.isRecording();
+    
+    // Device info
+    doc["device"]["name"] = DEVICE_NAME;
+    doc["device"]["version"] = DEVICE_VERSION;
+    doc["device"]["uptime"] = millis() / 1000;
+    doc["device"]["free_heap"] = ESP.getFreeHeap();
+    
+    // WiFi info
+    doc["wifi"]["connected"] = WiFi.isConnected();
+    doc["wifi"]["ssid"] = WiFi.SSID();
+    doc["wifi"]["ip"] = WiFi.localIP().toString();
+    doc["wifi"]["rssi"] = WiFi.RSSI();
+    
+    // MQTT info
+    doc["mqtt"]["connected"] = mqttClient.isConnected();
+    
+    // Audio info
+    doc["audio"]["recording"] = audioHandler.isRecording();
+    
+    // Voice info
+    doc["voice"]["wake_word"] = "jarvis";
+    doc["voice"]["active"] = false;
     
     webServer.broadcastStatus(doc);
+}
+
+void testIntegrationsOnStartup(JsonDocument& config) {
+    Serial.println("Starting integration tests...");
+    
+    // Test Home Assistant integration
+    if (config["integrations"]["home_assistant"]["enabled"] == true) {
+        const char* haUrl = config["integrations"]["home_assistant"]["url"];
+        const char* haToken = config["integrations"]["home_assistant"]["token"];
+        
+        if (haUrl && strlen(haUrl) > 0 && haToken && strlen(haToken) > 0) {
+            Serial.print("\n  → Home Assistant... ");
+            
+            HTTPClient http;
+            String url = String(haUrl);
+            if (!url.endsWith("/")) url += "/";
+            url += "api/";
+            
+            http.begin(url);
+            http.addHeader("Authorization", String("Bearer ") + haToken);
+            http.setTimeout(5000);
+            
+            int httpCode = http.GET();
+            http.end();
+            
+            if (httpCode == 200) {
+                Serial.print("✓ Connected");
+                config["integrations"]["home_assistant"]["status"] = "connected";
+            } else {
+                Serial.printf("✗ Failed (HTTP %d)", httpCode);
+                config["integrations"]["home_assistant"]["status"] = "failed";
+            }
+        } else {
+            Serial.print("\n  → Home Assistant... ⚠️ Not configured");
+            config["integrations"]["home_assistant"]["status"] = "not_configured";
+        }
+    }
+    
+    // Test weather provider
+    if (config["weather"]["provider"] == "openweathermap") {
+        const char* apiKey = config["weather"]["api_key"];
+        const char* location = config["weather"]["location"];
+        
+        if (apiKey && strlen(apiKey) > 0 && location && strlen(location) > 0) {
+            Serial.print("\n  → OpenWeatherMap... ");
+            
+            HTTPClient http;
+            String url = "http://api.openweathermap.org/data/2.5/weather?q=";
+            url += location;
+            url += "&appid=";
+            url += apiKey;
+            
+            http.begin(url);
+            http.setTimeout(5000);
+            
+            int httpCode = http.GET();
+            http.end();
+            
+            if (httpCode == 200) {
+                Serial.print("✓ Connected");
+                config["weather"]["status"] = "connected";
+            } else {
+                Serial.printf("✗ Failed (HTTP %d)", httpCode);
+                config["weather"]["status"] = "failed";
+            }
+        } else {
+            Serial.print("\n  → OpenWeatherMap... ⚠️ Not configured");
+            config["weather"]["status"] = "not_configured";
+        }
+    } else if (config["weather"]["provider"] == "homeassistant") {
+        // Weather from HA - depends on HA connection
+        config["weather"]["status"] = config["integrations"]["home_assistant"]["status"];
+    }
+    
+    // Save updated config with status
+    storage.saveConfig(config);
 }

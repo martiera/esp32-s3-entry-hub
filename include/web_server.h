@@ -37,13 +37,15 @@ private:
     void handlePostCommand(AsyncWebServerRequest *request);
     void handleDeleteCommand(AsyncWebServerRequest *request);
     void handleGetPresence(AsyncWebServerRequest *request);
+    void handleHomeAssistantPersons(AsyncWebServerRequest *request, JsonDocument &config);
     void handlePostScene(AsyncWebServerRequest *request);
     void handleGetWeather(AsyncWebServerRequest *request);
     void handleOpenWeatherMap(AsyncWebServerRequest *request, JsonDocument& config);
     void handleHomeAssistantWeather(AsyncWebServerRequest *request, JsonDocument& config);
     void handleSaveWeatherConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleSaveHomeAssistantConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
-    void handleTestHomeAssistant(AsyncWebServerRequest *request);
+    void handleCheckHomeAssistantConnection(AsyncWebServerRequest *request);
+    void handleGetHomeAssistantPersons(AsyncWebServerRequest *request);
     
     // WebSocket handlers
     static void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 

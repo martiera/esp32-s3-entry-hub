@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <HTTPClient.h>
+#include <esp_task_wdt.h>
 
 WebServerManager webServer;
 
@@ -17,8 +18,8 @@ void WebServerManager::begin() {
     Serial.println("Starting web server...");
     
     setupWebSocket();
+    setupAPIEndpoints();  // Register API handlers BEFORE static files
     setupRoutes();
-    setupAPIEndpoints();
     
     server.begin();
     Serial.printf("Web server started on port %d\n", WEB_SERVER_PORT);
@@ -34,11 +35,30 @@ void WebServerManager::setupWebSocket() {
 }
 
 void WebServerManager::setupRoutes() {
-    // Serve static files from LittleFS
-    server.serveStatic("/", LittleFS, "/www/").setDefaultFile("index.html");
-    
+    // Serve static files from LittleFS, but only for non-API routes
     server.onNotFound([this](AsyncWebServerRequest *request) {
-        handleNotFound(request);
+        // Don't try to serve static files for API routes
+        if (request->url().startsWith("/api/")) {
+            request->send(404, "application/json", "{\"error\":\"API endpoint not found\"}");
+            return;
+        }
+        
+        // Try to serve static file
+        String path = request->url();
+        if (path.endsWith("/")) path += "index.html";
+        
+        // Serve from /www/ directory in LittleFS
+        String filePath = "/www" + path;
+        if (LittleFS.exists(filePath)) {
+            request->send(LittleFS, filePath);
+        } else if (LittleFS.exists(filePath + ".gz")) {
+            AsyncWebServerResponse *response = request->beginResponse(LittleFS, filePath + ".gz");
+            response->addHeader("Content-Encoding", "gzip");
+            request->send(response);
+        } else {
+            // Fallback to index.html for SPA routing
+            request->send(LittleFS, "/www/index.html");
+        }
     });
 }
 
@@ -65,7 +85,11 @@ void WebServerManager::setupAPIEndpoints() {
         });
     
     server.on("/api/homeassistant/test", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        handleTestHomeAssistant(request);
+        handleCheckHomeAssistantConnection(request);
+    });
+    
+    server.on("/api/homeassistant/persons", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleGetHomeAssistantPersons(request);
     });
     
     server.on("/api/config", HTTP_POST, [this](AsyncWebServerRequest *request) {
@@ -103,10 +127,6 @@ void WebServerManager::setupAPIEndpoints() {
 
 void WebServerManager::handleRoot(AsyncWebServerRequest *request) {
     request->send(LittleFS, "/www/index.html", "text/html");
-}
-
-void WebServerManager::handleNotFound(AsyncWebServerRequest *request) {
-    request->send(404, "text/plain", "Not Found");
 }
 
 void WebServerManager::handleGetStatus(AsyncWebServerRequest *request) {
@@ -179,15 +199,109 @@ void WebServerManager::handleDeleteCommand(AsyncWebServerRequest *request) {
 }
 
 void WebServerManager::handleGetPresence(AsyncWebServerRequest *request) {
-    JsonDocument doc;
+    JsonDocument config;
     
-    if (storage.loadPresence(doc)) {
-        String response;
-        serializeJson(doc, response);
-        request->send(200, "application/json", response);
-    } else {
-        request->send(200, "application/json", "{\"people\":[]}");
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
     }
+    
+    // Check if person tracking is configured
+    if (!config["presence"]["enabled"].as<bool>() || 
+        !config["presence"]["home_assistant"]["entity_ids"].is<JsonArray>()) {
+        // Return static data from presence.json
+        JsonDocument doc;
+        if (storage.loadPresence(doc)) {
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        } else {
+            request->send(200, "application/json", "{\"people\":[]}");
+        }
+        return;
+    }
+    
+    // Fetch from Home Assistant
+    handleHomeAssistantPersons(request, config);
+}
+
+void WebServerManager::handleHomeAssistantPersons(AsyncWebServerRequest *request, JsonDocument &config) {
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    JsonArray entityIds = config["presence"]["home_assistant"]["entity_ids"].as<JsonArray>();
+    
+    if (!haUrl || !haToken || entityIds.size() == 0) {
+        request->send(400, "application/json", "{\"error\":\"Person tracking not configured\"}");
+        return;
+    }
+    
+    JsonDocument response;
+    JsonArray people = response["people"].to<JsonArray>();
+    
+    // Fetch each person entity from Home Assistant
+    for (JsonVariant entityId : entityIds) {
+        String url = String(haUrl);
+        if (!url.endsWith("/")) url += "/";
+        url += "api/states/";
+        url += entityId.as<String>();
+        
+        HTTPClient http;
+        http.begin(url);
+        http.addHeader("Authorization", String("Bearer ") + haToken);
+        http.addHeader("Content-Type", "application/json");
+        http.setTimeout(3000);
+        
+        int httpCode = http.GET();
+        
+        if (httpCode == 200) {
+            String payload = http.getString();
+            JsonDocument personDoc;
+            deserializeJson(personDoc, payload);
+            
+            // Extract person data
+            JsonDocument person;
+            String entityIdStr = entityId.as<String>();
+            String name = entityIdStr.substring(entityIdStr.indexOf('.') + 1);
+            name[0] = toupper(name[0]); // Capitalize first letter
+            
+            person["name"] = name;
+            person["present"] = (personDoc["state"].as<String>() == "home");
+            person["location"] = personDoc["state"].as<String>();
+            
+            // Get avatar from attributes if available
+            if (personDoc["attributes"]["icon"]) {
+                person["avatar"] = personDoc["attributes"]["icon"].as<String>();
+            } else {
+                // Default avatars based on entity_id
+                if (entityIdStr.indexOf("john") >= 0 || entityIdStr.indexOf("dad") >= 0) {
+                    person["avatar"] = "👨";
+                } else if (entityIdStr.indexOf("jane") >= 0 || entityIdStr.indexOf("mom") >= 0) {
+                    person["avatar"] = "👩";
+                } else if (entityIdStr.indexOf("kid") >= 0 || entityIdStr.indexOf("child") >= 0) {
+                    person["avatar"] = "👶";
+                } else {
+                    person["avatar"] = "👤";
+                }
+            }
+            
+            // Get additional attributes
+            if (personDoc["attributes"]["latitude"]) {
+                person["latitude"] = personDoc["attributes"]["latitude"].as<float>();
+                person["longitude"] = personDoc["attributes"]["longitude"].as<float>();
+            }
+            if (personDoc["attributes"]["source"]) {
+                person["source"] = personDoc["attributes"]["source"].as<String>();
+            }
+            
+            people.add(person);
+        }
+        
+        http.end();
+    }
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    request->send(200, "application/json", responseStr);
 }
 
 void WebServerManager::handlePostScene(AsyncWebServerRequest *request) {
@@ -259,7 +373,7 @@ void WebServerManager::handleSaveHomeAssistantConfig(AsyncWebServerRequest *requ
     }
 }
 
-void WebServerManager::handleTestHomeAssistant(AsyncWebServerRequest *request) {
+void WebServerManager::handleCheckHomeAssistantConnection(AsyncWebServerRequest *request) {
     JsonDocument config;
     
     if (!storage.loadConfig(config)) {
@@ -316,6 +430,71 @@ void WebServerManager::handleTestHomeAssistant(AsyncWebServerRequest *request) {
         errorResponse += "}";
         request->send(httpCode == 401 || httpCode == 403 ? 401 : 500, "application/json", errorResponse);
     }
+}
+
+void WebServerManager::handleGetHomeAssistantPersons(AsyncWebServerRequest *request) {
+    JsonDocument config;
+    
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
+    }
+    
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    
+    if (!haUrl || strlen(haUrl) == 0 || !haToken || strlen(haToken) == 0) {
+        request->send(400, "application/json", "{\"error\":\"Home Assistant not configured. Please configure HA integration first.\"}");
+        return;
+    }
+    
+    // Use HA Template API to get only person entities - much smaller response!
+    String url = String(haUrl);
+    if (!url.endsWith("/")) url += "/";
+    url += "api/template";
+    
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Authorization", String("Bearer ") + haToken);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(10000);
+    
+    // Template to get person entities with their state and friendly name
+    String templatePayload = "{\"template\":\"[{% for person in states.person %}{\\\"entity_id\\\":\\\"{{ person.entity_id }}\\\",\\\"state\\\":\\\"{{ person.state }}\\\",\\\"name\\\":\\\"{{ person.attributes.friendly_name | default(person.name) }}\\\"}{% if not loop.last %},{% endif %}{% endfor %}]\"}";
+    
+    int httpCode = http.POST(templatePayload);
+    
+    if (httpCode != 200) {
+        http.end();
+        String errorResponse = "{\"error\":\"Failed to connect to Home Assistant\",\"code\":";
+        errorResponse += httpCode;
+        errorResponse += "}";
+        request->send(httpCode, "application/json", errorResponse);
+        return;
+    }
+    
+    String payload = http.getString();
+    http.end();
+    
+    // Parse the template response (it's a JSON array of person entities)
+    JsonDocument persons;
+    DeserializationError error = deserializeJson(persons, payload);
+    
+    if (error) {
+        String errorMsg = "{\"error\":\"Failed to parse Home Assistant response: ";
+        errorMsg += error.c_str();
+        errorMsg += "\"}";
+        request->send(500, "application/json", errorMsg);
+        return;
+    }
+    
+    // Wrap in response object
+    JsonDocument response;
+    response["persons"] = persons;
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    request->send(200, "application/json", responseStr);
 }
 
 void WebServerManager::handleGetWeather(AsyncWebServerRequest *request) {

@@ -25,7 +25,7 @@
         "sleep_timeout": 60000
     },
     "weather": {
-        "provider": "none",
+        "provider": "home_assistant",
         "openweathermap": {
             "api_key": "",
             "city": "",
@@ -50,6 +50,12 @@
         "calendar": {
             "enabled": false,
             "url": ""
+        }
+    },
+    "presence": {
+        "enabled": false,
+        "home_assistant": {
+            "entity_ids": []
         }
     }
 }

@@ -49,12 +49,7 @@
 #define COMMANDS_FILE "/commands.json"
 #define PRESENCE_FILE "/presence.json"
 
-// OTA
-#ifndef OTA_PASSWORD
-#define OTA_PASSWORD "admin123"
-#endif
-
-// OTA
+// OTA (will use from secrets.h if available)
 #ifndef OTA_PASSWORD
 #define OTA_PASSWORD "admin123"
 #endif
