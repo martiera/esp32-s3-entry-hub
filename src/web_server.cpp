@@ -52,7 +52,7 @@ void WebServerManager::setupRoutes() {
         if (LittleFS.exists(filePath)) {
             request->send(LittleFS, filePath);
         } else if (LittleFS.exists(filePath + ".gz")) {
-            AsyncWebServerResponse *response = request->beginResponse(LittleFS, filePath + ".gz");
+            AsyncWebServerResponse *response = request->beginResponse(LittleFS, (filePath + ".gz").c_str(), String(), false);
             response->addHeader("Content-Encoding", "gzip");
             request->send(response);
         } else {
@@ -92,9 +92,10 @@ void WebServerManager::setupAPIEndpoints() {
         handleGetHomeAssistantPersons(request);
     });
     
-    server.on("/api/config", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        handlePostConfig(request);
-    });
+    server.on("/api/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            handlePostConfig(request, data, len);
+        });
     
     // Voice commands
     server.on("/api/commands", HTTP_GET, [this](AsyncWebServerRequest *request) {
@@ -170,9 +171,41 @@ void WebServerManager::handleGetConfig(AsyncWebServerRequest *request) {
     }
 }
 
-void WebServerManager::handlePostConfig(AsyncWebServerRequest *request) {
-    // TODO: Implement configuration update
-    request->send(200, "application/json", "{\"success\":true}");
+void WebServerManager::handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len) {
+    JsonDocument newConfig;
+    DeserializationError error = deserializeJson(newConfig, data, len);
+    
+    if (error) {
+        request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        return;
+    }
+    
+    // Load existing config to preserve fields not in request if needed
+    // But here we assume the client sends the full config or we merge carefully
+    // For simplicity, let's load existing and merge top-level keys
+    
+    JsonDocument config;
+    if (!storage.loadConfig(config)) {
+        config["device"]["name"] = DEVICE_NAME;
+    }
+    
+    // Merge known sections
+    if (newConfig.containsKey("device")) config["device"] = newConfig["device"];
+    if (newConfig.containsKey("network")) config["network"] = newConfig["network"];
+    if (newConfig.containsKey("mqtt")) config["mqtt"] = newConfig["mqtt"];
+    if (newConfig.containsKey("voice")) config["voice"] = newConfig["voice"];
+    if (newConfig.containsKey("display")) config["display"] = newConfig["display"];
+    if (newConfig.containsKey("weather")) config["weather"] = newConfig["weather"];
+    if (newConfig.containsKey("integrations")) config["integrations"] = newConfig["integrations"];
+    if (newConfig.containsKey("presence")) config["presence"] = newConfig["presence"];
+    
+    if (storage.saveConfig(config)) {
+        request->send(200, "application/json", "{\"success\":true}");
+        // Notify clients of config change
+        broadcastMessage("config_updated", "Configuration updated");
+    } else {
+        request->send(500, "application/json", "{\"error\":\"Failed to save config\"}");
+    }
 }
 
 void WebServerManager::handleGetCommands(AsyncWebServerRequest *request) {
@@ -207,17 +240,9 @@ void WebServerManager::handleGetPresence(AsyncWebServerRequest *request) {
     }
     
     // Check if person tracking is configured
-    if (!config["presence"]["enabled"].as<bool>() || 
-        !config["presence"]["home_assistant"]["entity_ids"].is<JsonArray>()) {
-        // Return static data from presence.json
-        JsonDocument doc;
-        if (storage.loadPresence(doc)) {
-            String response;
-            serializeJson(doc, response);
-            request->send(200, "application/json", response);
-        } else {
-            request->send(200, "application/json", "{\"people\":[]}");
-        }
+    if (!config["presence"]["home_assistant"]["entity_ids"].is<JsonArray>() || 
+        config["presence"]["home_assistant"]["entity_ids"].as<JsonArray>().size() == 0) {
+        request->send(200, "application/json", "{\"people\":[]}");
         return;
     }
     
@@ -261,9 +286,16 @@ void WebServerManager::handleHomeAssistantPersons(AsyncWebServerRequest *request
             // Extract person data
             JsonDocument person;
             String entityIdStr = entityId.as<String>();
-            String name = entityIdStr.substring(entityIdStr.indexOf('.') + 1);
-            name[0] = toupper(name[0]); // Capitalize first letter
+            String name;
             
+            if (personDoc["attributes"]["friendly_name"]) {
+                name = personDoc["attributes"]["friendly_name"].as<String>();
+            } else {
+                name = entityIdStr.substring(entityIdStr.indexOf('.') + 1);
+                if (name.length() > 0) name[0] = toupper(name[0]); // Capitalize first letter
+            }
+            
+            person["entity_id"] = entityIdStr;
             person["name"] = name;
             person["present"] = (personDoc["state"].as<String>() == "home");
             person["location"] = personDoc["state"].as<String>();

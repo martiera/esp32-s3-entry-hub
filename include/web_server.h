@@ -32,7 +32,7 @@ private:
     // API handlers
     void handleGetStatus(AsyncWebServerRequest *request);
     void handleGetConfig(AsyncWebServerRequest *request);
-    void handlePostConfig(AsyncWebServerRequest *request);
+    void handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleGetCommands(AsyncWebServerRequest *request);
     void handlePostCommand(AsyncWebServerRequest *request);
     void handleDeleteCommand(AsyncWebServerRequest *request);

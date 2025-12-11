@@ -241,9 +241,10 @@ function renderCommandsTable(commands) {
 async function loadPresence() {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // Increased timeout to 10s
         
-        const response = await fetch('/api/presence', { signal: controller.signal });
+        // Add timestamp to prevent caching
+        const response = await fetch(`/api/presence?t=${Date.now()}`, { signal: controller.signal });
         clearTimeout(timeoutId);
         
         if (!response.ok) {
@@ -254,21 +255,11 @@ async function loadPresence() {
         if (data && data.people) {
             renderPresence(data.people);
         } else {
-            // Show sample data
-            renderPresence([
-                { name: 'John', avatar: '👨', present: true, location: 'Home', lastSeen: Date.now() },
-                { name: 'Jane', avatar: '👩', present: false, location: 'Work', lastSeen: Date.now() - 3600000 },
-                { name: 'Kids', avatar: '👧', present: true, location: 'Home', lastSeen: Date.now() }
-            ]);
+            renderPresence([]);
         }
     } catch (error) {
         console.error('Failed to load presence:', error);
-        // Show sample data on error
-        renderPresence([
-            { name: 'John', avatar: '👨', present: true, location: 'Home', lastSeen: Date.now() },
-            { name: 'Jane', avatar: '👩', present: false, location: 'Work', lastSeen: Date.now() - 3600000 },
-            { name: 'Kids', avatar: '👧', present: true, location: 'Home', lastSeen: Date.now() }
-        ]);
+        renderPresence([]);
     }
 }
 
@@ -304,7 +295,10 @@ function renderPresence(people) {
                             <div style="font-size: 0.875rem; color: var(--text-muted);">${person.location}</div>
                         </div>
                     </div>
-                    <span class="badge ${person.present ? 'badge-success' : 'badge-warning'}">${person.present ? 'Present' : 'Away'}</span>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="badge ${person.present ? 'badge-success' : 'badge-warning'}">${person.present ? 'Present' : 'Away'}</span>
+                        ${person.entity_id ? `<button class="btn-remove" onclick="removePerson('${person.entity_id}')" title="Remove Person">🗑️</button>` : ''}
+                    </div>
                 </div>
             `).join('');
         }
@@ -367,6 +361,8 @@ async function loadIntegrations() {
         const config = await apiGet('config');
         if (config) {
             updateIntegrationStatus(config);
+            // Also load person config to ensure trackedPersons is initialized
+            loadPersonConfig(config);
         }
     } catch (error) {
         console.error('Failed to load integrations:', error);
@@ -768,55 +764,12 @@ async function testHomeAssistantConnection() {
 let trackedPersons = [];
 
 function loadPersonConfig(config) {
-    const enabled = config.presence?.enabled || false;
     const entityIds = config.presence?.home_assistant?.entity_ids || [];
-    
-    document.getElementById('personEnabled').checked = enabled;
     trackedPersons = entityIds;
-    
-    togglePersonTracking();
-    renderTrackedPersons();
-    updatePersonStatus(enabled, entityIds.length);
-}
-
-async function togglePersonTracking() {
-    const enabled = document.getElementById('personEnabled').checked;
-    const settings = document.getElementById('personSettings');
-    settings.style.display = enabled ? 'block' : 'none';
-    
-    if (enabled) {
-        renderTrackedPersons();
-    } else {
-        // Save disabled state and refresh dashboard
-        await savePersonSettings();
-        loadPresence();
-    }
 }
 
 function renderTrackedPersons() {
-    const container = document.getElementById('trackedPersonsList');
-    
-    if (trackedPersons.length === 0) {
-        container.innerHTML = '<p class="help-text">No people tracked yet. Click "Add Person" to select from Home Assistant.</p>';
-        return;
-    }
-    
-    container.innerHTML = trackedPersons.map(entityId => {
-        const name = entityId.replace('person.', '').replace(/_/g, ' ');
-        const avatar = getPersonAvatar(name);
-        return `
-            <div class="tracked-person-item">
-                <div class="tracked-person-info">
-                    <span class="tracked-person-avatar">${avatar}</span>
-                    <div class="tracked-person-details">
-                        <div class="tracked-person-name">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
-                        <div class="tracked-person-id">${entityId}</div>
-                    </div>
-                </div>
-                <button class="btn-remove" onclick="removePerson('${entityId}')" title="Remove">🗑️</button>
-            </div>
-        `;
-    }).join('');
+    // Removed
 }
 
 function getPersonAvatar(name) {
@@ -830,17 +783,7 @@ function getPersonAvatar(name) {
 }
 
 function updatePersonStatus(enabled, count) {
-    // Update presence page badge
-    const statusBadgePage = document.getElementById('personStatusPage');
-    if (statusBadgePage) {
-        if (!enabled || count === 0) {
-            statusBadgePage.className = 'badge badge-warning';
-            statusBadgePage.textContent = 'Not Configured';
-        } else {
-            statusBadgePage.className = 'badge badge-success';
-            statusBadgePage.textContent = `Tracking ${count} ${count === 1 ? 'Person' : 'People'}`;
-        }
-    }
+    // Removed
 }
 
 async function showPersonSelector() {
@@ -891,6 +834,8 @@ async function showPersonSelector() {
 
 function closePersonSelector() {
     document.getElementById('personSelectorModal').style.display = 'none';
+    // Reload presence when closing modal to ensure list is up to date
+    loadPresence();
 }
 
 async function addPerson(entityId, name) {
@@ -899,12 +844,6 @@ async function addPerson(entityId, name) {
     }
     
     trackedPersons.push(entityId);
-    
-    // Enable tracking if not already enabled
-    const pageToggle = document.getElementById('personEnabledPage');
-    if (pageToggle && !pageToggle.checked) {
-        pageToggle.checked = true;
-    }
     
     await savePersonSettings();
     showPersonSelector(); // Refresh the modal
@@ -917,7 +856,7 @@ async function addPerson(entityId, name) {
 async function removePerson(entityId) {
     trackedPersons = trackedPersons.filter(id => id !== entityId);
     await savePersonSettings();
-    renderTrackedPersons();
+    // renderTrackedPersons(); // Removed
     
     const name = entityId.replace('person.', '').replace(/_/g, ' ');
     showNotification(`Removed ${name} from tracking`, 'success');
@@ -927,9 +866,6 @@ async function removePerson(entityId) {
 }
 
 async function savePersonSettings() {
-    const pageToggle = document.getElementById('personEnabledPage');
-    const enabled = pageToggle ? pageToggle.checked : false;
-    
     // Load full config
     try {
         const response = await fetch('/api/config');
@@ -937,7 +873,7 @@ async function savePersonSettings() {
         
         // Update presence section
         config.presence = {
-            enabled: enabled,
+            enabled: true, // Always enabled if using this feature
             home_assistant: {
                 entity_ids: trackedPersons
             }
@@ -951,8 +887,8 @@ async function savePersonSettings() {
         });
         
         if (saveResponse.ok) {
-            showNotification('Person tracking settings saved successfully', 'success');
-            updatePersonStatus(enabled, entityIds.length);
+            // showNotification('Person tracking settings saved successfully', 'success'); // Too verbose for every add/remove
+            // updatePersonStatus(true, trackedPersons.length); // Removed
             // Reload presence data
             loadPresence();
         } else {
