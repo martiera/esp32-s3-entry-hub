@@ -27,12 +27,34 @@ function initializeNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
     
     navItems.forEach(item => {
-        item.addEventListener('click', (e) => {
+        item.addEventListener('click', function(e) {
             e.preventDefault();
-            const page = item.getAttribute('data-page');
+            e.stopPropagation();
+            
+            const page = this.getAttribute('data-page');
             navigateToPage(page);
-        });
+            
+            // Always close sidebar if it has 'show' class (mobile menu is open)
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar && sidebar.classList.contains('show')) {
+                closeSidebar();
+            }
+        }, { passive: false });
     });
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.toggle('show');
+    if (overlay) overlay.classList.toggle('show');
+}
+
+function closeSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (sidebar) sidebar.classList.remove('show');
+    if (overlay) overlay.classList.remove('show');
 }
 
 function navigateToPage(pageName) {
@@ -598,8 +620,9 @@ async function loadWeatherConfig() {
         const config = await response.json();
         
         // Set weather provider
-        const provider = config.weather?.provider || 'none';
+        const provider = config.weather?.provider || 'homeassistant';
         document.getElementById('weatherProvider').value = provider;
+        toggleWeatherProvider(); // Ensure UI updates based on default
         
         // OpenWeatherMap settings
         if (config.weather?.openweathermap) {

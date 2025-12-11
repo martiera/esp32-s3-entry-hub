@@ -8,9 +8,13 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
 </head>
 <body>
+    <div class="mobile-header">
+        <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+        <h1>Entry Hub</h1>
+    </div>
     <div class="container">
         <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="logo">
                 <h1>🏠 Entry Hub</h1>
                 <p class="version">v1.0.0</p>
@@ -50,6 +54,7 @@
                 </div>
             </div>
         </aside>
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
         <!-- Main Content -->
         <main class="main-content">
