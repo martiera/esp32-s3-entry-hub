@@ -509,8 +509,17 @@ async function loadCalendarConfig() {
             const provider = calendar.provider || (calendar.enabled ? 'homeassistant' : 'none');
             document.getElementById('calendarProvider').value = provider;
             
-            if (calendar.home_assistant) {
-                document.getElementById('haCalendarEntity').value = calendar.home_assistant.entity_id || 'calendar.family';
+            if (calendar.home_assistant?.entity_id) {
+                const calendarSelect = document.getElementById('haCalendarEntity');
+                const entityId = calendar.home_assistant.entity_id;
+                // Add option if not exists
+                if (!calendarSelect.querySelector(`option[value="${entityId}"]`)) {
+                    const option = document.createElement('option');
+                    option.value = entityId;
+                    option.textContent = entityId;
+                    calendarSelect.appendChild(option);
+                }
+                calendarSelect.value = entityId;
                 document.getElementById('calendarShowToday').checked = calendar.home_assistant.show_today !== false;
                 document.getElementById('calendarShowTomorrow').checked = calendar.home_assistant.show_tomorrow !== false;
                 document.getElementById('calendarMaxEvents').value = calendar.home_assistant.max_events || 5;
@@ -854,10 +863,17 @@ async function loadWeatherConfig() {
         }
         
         // Home Assistant weather settings
-        if (config.weather?.home_assistant) {
-            document.getElementById('haWeatherEntity').value = config.weather.home_assistant.entity_id || 'weather.forecast_home';
-        } else {
-            document.getElementById('haWeatherEntity').value = 'weather.forecast_home';
+        if (config.weather?.home_assistant?.entity_id) {
+            const weatherSelect = document.getElementById('haWeatherEntity');
+            const entityId = config.weather.home_assistant.entity_id;
+            // Add option if not exists
+            if (!weatherSelect.querySelector(`option[value="${entityId}"]`)) {
+                const option = document.createElement('option');
+                option.value = entityId;
+                option.textContent = entityId;
+                weatherSelect.appendChild(option);
+            }
+            weatherSelect.value = entityId;
         }
         
         // Home Assistant integration settings
@@ -1002,6 +1018,104 @@ async function testHomeAssistantConnection() {
         statusBadge.textContent = 'Error';
         document.getElementById('haConnectionInfo').style.display = 'none';
         showNotification('Failed to test Home Assistant connection', 'error');
+    }
+}
+
+// Load weather entities from Home Assistant
+async function loadWeatherEntities() {
+    const select = document.getElementById('haWeatherEntity');
+    const currentValue = select.value;
+    
+    // Show loading state
+    select.innerHTML = '<option value="">Loading...</option>';
+    select.disabled = true;
+    
+    try {
+        const response = await fetch('/api/homeassistant/weather');
+        const data = await response.json();
+        
+        if (data.error) {
+            select.innerHTML = '<option value="">-- Error loading --</option>';
+            showNotification(data.error, 'error');
+            select.disabled = false;
+            return;
+        }
+        
+        const entities = data.entities || [];
+        
+        if (entities.length === 0) {
+            select.innerHTML = '<option value="">-- No weather entities found --</option>';
+            showNotification('No weather entities found in Home Assistant', 'warning');
+            select.disabled = false;
+            return;
+        }
+        
+        // Build options
+        let html = '<option value="">-- Select Entity --</option>';
+        entities.forEach(entity => {
+            const selected = entity.entity_id === currentValue ? 'selected' : '';
+            const displayName = entity.name || entity.entity_id.replace('weather.', '').replace(/_/g, ' ');
+            html += `<option value="${entity.entity_id}" ${selected}>${displayName} (${entity.entity_id})</option>`;
+        });
+        
+        select.innerHTML = html;
+        select.disabled = false;
+        showNotification(`Found ${entities.length} weather entity(s)`, 'success');
+        
+    } catch (error) {
+        console.error('Failed to load weather entities:', error);
+        select.innerHTML = '<option value="">-- Error --</option>';
+        select.disabled = false;
+        showNotification('Failed to load weather entities. Is Home Assistant configured?', 'error');
+    }
+}
+
+// Load calendar entities from Home Assistant
+async function loadCalendarEntities() {
+    const select = document.getElementById('haCalendarEntity');
+    const currentValue = select.value;
+    
+    // Show loading state
+    select.innerHTML = '<option value="">Loading...</option>';
+    select.disabled = true;
+    
+    try {
+        const response = await fetch('/api/homeassistant/calendars');
+        const data = await response.json();
+        
+        if (data.error) {
+            select.innerHTML = '<option value="">-- Error loading --</option>';
+            showNotification(data.error, 'error');
+            select.disabled = false;
+            return;
+        }
+        
+        const entities = data.entities || [];
+        
+        if (entities.length === 0) {
+            select.innerHTML = '<option value="">-- No calendars found --</option>';
+            showNotification('No calendar entities found in Home Assistant', 'warning');
+            select.disabled = false;
+            return;
+        }
+        
+        // Build options
+        let html = '<option value="">-- Select Calendar --</option>';
+        entities.forEach(entity => {
+            const selected = entity.entity_id === currentValue ? 'selected' : '';
+            const displayName = entity.name || entity.entity_id.replace('calendar.', '').replace(/_/g, ' ');
+            html += `<option value="${entity.entity_id}" ${selected}>${displayName} (${entity.entity_id})</option>`;
+        });
+        
+        select.innerHTML = html;
+        select.disabled = false;
+        showNotification(`Found ${entities.length} calendar(s)`, 'success');
+        
+    } catch (error) {
+        console.error('Failed to load calendar entities:', error);
+        select.innerHTML = '<option value="">-- Error --</option>';
+        select.disabled = false;
+        showNotification('Failed to load calendars. Is Home Assistant configured?', 'error');
     }
 }
 

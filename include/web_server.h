@@ -48,6 +48,8 @@ private:
     void handleSaveHomeAssistantConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleCheckHomeAssistantConnection(AsyncWebServerRequest *request);
     void handleGetHomeAssistantPersons(AsyncWebServerRequest *request);
+    void handleGetHomeAssistantWeatherEntities(AsyncWebServerRequest *request);
+    void handleGetHomeAssistantCalendarEntities(AsyncWebServerRequest *request);
     
     // WebSocket handlers
     static void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 

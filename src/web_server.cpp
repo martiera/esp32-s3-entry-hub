@@ -92,6 +92,14 @@ void WebServerManager::setupAPIEndpoints() {
         handleGetHomeAssistantPersons(request);
     });
     
+    server.on("/api/homeassistant/weather", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleGetHomeAssistantWeatherEntities(request);
+    });
+    
+    server.on("/api/homeassistant/calendars", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleGetHomeAssistantCalendarEntities(request);
+    });
+    
     server.on("/api/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
         [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             handlePostConfig(request, data, len);
@@ -194,15 +202,15 @@ void WebServerManager::handlePostConfig(AsyncWebServerRequest *request, uint8_t 
         config["device"]["name"] = DEVICE_NAME;
     }
     
-    // Merge known sections
-    if (newConfig.containsKey("device")) config["device"] = newConfig["device"];
-    if (newConfig.containsKey("network")) config["network"] = newConfig["network"];
-    if (newConfig.containsKey("mqtt")) config["mqtt"] = newConfig["mqtt"];
-    if (newConfig.containsKey("voice")) config["voice"] = newConfig["voice"];
-    if (newConfig.containsKey("display")) config["display"] = newConfig["display"];
-    if (newConfig.containsKey("weather")) config["weather"] = newConfig["weather"];
-    if (newConfig.containsKey("integrations")) config["integrations"] = newConfig["integrations"];
-    if (newConfig.containsKey("presence")) config["presence"] = newConfig["presence"];
+    // Merge known sections (using modern ArduinoJson syntax)
+    if (!newConfig["device"].isNull()) config["device"] = newConfig["device"];
+    if (!newConfig["network"].isNull()) config["network"] = newConfig["network"];
+    if (!newConfig["mqtt"].isNull()) config["mqtt"] = newConfig["mqtt"];
+    if (!newConfig["voice"].isNull()) config["voice"] = newConfig["voice"];
+    if (!newConfig["display"].isNull()) config["display"] = newConfig["display"];
+    if (!newConfig["weather"].isNull()) config["weather"] = newConfig["weather"];
+    if (!newConfig["integrations"].isNull()) config["integrations"] = newConfig["integrations"];
+    if (!newConfig["presence"].isNull()) config["presence"] = newConfig["presence"];
     
     if (storage.saveConfig(config)) {
         request->send(200, "application/json", "{\"success\":true}");
@@ -528,6 +536,120 @@ void WebServerManager::handleGetHomeAssistantPersons(AsyncWebServerRequest *requ
     // Wrap in response object
     JsonDocument response;
     response["persons"] = persons;
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    request->send(200, "application/json", responseStr);
+}
+
+void WebServerManager::handleGetHomeAssistantWeatherEntities(AsyncWebServerRequest *request) {
+    JsonDocument config;
+    
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
+    }
+    
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    
+    if (!haUrl || strlen(haUrl) == 0 || !haToken || strlen(haToken) == 0) {
+        request->send(400, "application/json", "{\"error\":\"Home Assistant not configured\"}");
+        return;
+    }
+    
+    // Use HA Template API to get weather entities
+    String url = String(haUrl);
+    if (!url.endsWith("/")) url += "/";
+    url += "api/template";
+    
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Authorization", String("Bearer ") + haToken);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(10000);
+    
+    // Template to get weather entities with their friendly name
+    String templatePayload = "{\"template\":\"[{% for weather in states.weather %}{\\\"entity_id\\\":\\\"{{ weather.entity_id }}\\\",\\\"state\\\":\\\"{{ weather.state }}\\\",\\\"name\\\":\\\"{{ weather.attributes.friendly_name | default(weather.name) }}\\\"}{% if not loop.last %},{% endif %}{% endfor %}]\"}";
+    
+    int httpCode = http.POST(templatePayload);
+    
+    if (httpCode != 200) {
+        http.end();
+        request->send(httpCode, "application/json", "{\"error\":\"Failed to connect to Home Assistant\"}");
+        return;
+    }
+    
+    String payload = http.getString();
+    http.end();
+    
+    JsonDocument entities;
+    DeserializationError error = deserializeJson(entities, payload);
+    
+    if (error) {
+        request->send(500, "application/json", "{\"error\":\"Failed to parse response\"}");
+        return;
+    }
+    
+    JsonDocument response;
+    response["entities"] = entities;
+    
+    String responseStr;
+    serializeJson(response, responseStr);
+    request->send(200, "application/json", responseStr);
+}
+
+void WebServerManager::handleGetHomeAssistantCalendarEntities(AsyncWebServerRequest *request) {
+    JsonDocument config;
+    
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
+    }
+    
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    
+    if (!haUrl || strlen(haUrl) == 0 || !haToken || strlen(haToken) == 0) {
+        request->send(400, "application/json", "{\"error\":\"Home Assistant not configured\"}");
+        return;
+    }
+    
+    // Use HA Template API to get calendar entities
+    String url = String(haUrl);
+    if (!url.endsWith("/")) url += "/";
+    url += "api/template";
+    
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Authorization", String("Bearer ") + haToken);
+    http.addHeader("Content-Type", "application/json");
+    http.setTimeout(10000);
+    
+    // Template to get calendar entities with their friendly name
+    String templatePayload = "{\"template\":\"[{% for cal in states.calendar %}{\\\"entity_id\\\":\\\"{{ cal.entity_id }}\\\",\\\"state\\\":\\\"{{ cal.state }}\\\",\\\"name\\\":\\\"{{ cal.attributes.friendly_name | default(cal.name) }}\\\"}{% if not loop.last %},{% endif %}{% endfor %}]\"}";
+    
+    int httpCode = http.POST(templatePayload);
+    
+    if (httpCode != 200) {
+        http.end();
+        request->send(httpCode, "application/json", "{\"error\":\"Failed to connect to Home Assistant\"}");
+        return;
+    }
+    
+    String payload = http.getString();
+    http.end();
+    
+    JsonDocument entities;
+    DeserializationError error = deserializeJson(entities, payload);
+    
+    if (error) {
+        request->send(500, "application/json", "{\"error\":\"Failed to parse response\"}");
+        return;
+    }
+    
+    JsonDocument response;
+    response["entities"] = entities;
     
     String responseStr;
     serializeJson(response, responseStr);

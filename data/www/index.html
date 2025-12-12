@@ -416,8 +416,14 @@
                             <!-- Home Assistant Weather Settings -->
                             <div id="haWeatherSettings" style="display: none;">
                                 <div class="form-group">
-                                    <label>Weather Entity ID</label>
-                                    <input type="text" id="haWeatherEntity" placeholder="weather.forecast_home" class="form-control">
+                                    <label>Weather Entity</label>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <select id="haWeatherEntity" class="form-control" style="flex: 1;">
+                                            <option value="">-- Select Entity --</option>
+                                        </select>
+                                        <button class="btn btn-secondary" onclick="loadWeatherEntities()" title="Load from HA">🔄</button>
+                                    </div>
+                                    <p class="help-text" style="margin-top: 0.25rem; font-size: 0.75rem;">Click 🔄 to load available weather entities from Home Assistant</p>
                                 </div>
                                 <p class="help-text">Make sure Home Assistant URL and token are configured above</p>
                                 <button class="btn btn-primary" onclick="saveWeatherSettings()">Save Settings</button>
@@ -449,9 +455,14 @@
                             <!-- Home Assistant Calendar Settings -->
                             <div id="calendarHaSettings" style="display: none;">
                                 <div class="form-group">
-                                    <label>Calendar Entity ID</label>
-                                    <input type="text" id="haCalendarEntity" placeholder="calendar.family" class="form-control">
-                                    <p class="help-text" style="margin-top: 0.25rem; font-size: 0.75rem;">Find in HA → Developer Tools → States → Search "calendar."</p>
+                                    <label>Calendar Entity</label>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <select id="haCalendarEntity" class="form-control" style="flex: 1;">
+                                            <option value="">-- Select Entity --</option>
+                                        </select>
+                                        <button class="btn btn-secondary" onclick="loadCalendarEntities()" title="Load from HA">🔄</button>
+                                    </div>
+                                    <p class="help-text" style="margin-top: 0.25rem; font-size: 0.75rem;">Click 🔄 to load available calendar entities from Home Assistant</p>
                                 </div>
                                 <div class="form-group">
                                     <label>
