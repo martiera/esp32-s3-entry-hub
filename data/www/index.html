@@ -144,29 +144,41 @@
                     </div>
                 </div>
 
-                <!-- Quick Actions -->
-                <div class="card mt-20">
-                    <div class="card-header">
-                        <h3>Quick Actions</h3>
+                <div class="grid-2 mt-20">
+                    <!-- Calendar Widget -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>📅 Upcoming</h3>
+                        </div>
+                        <div class="card-body calendar-widget" id="calendarWidget">
+                            <div class="calendar-loading">Loading calendar...</div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="action-grid">
-                            <button class="action-btn" onclick="triggerScene('welcome_home')">
-                                <span class="action-icon">🏡</span>
-                                <span>Welcome Home</span>
-                            </button>
-                            <button class="action-btn" onclick="triggerScene('good_night')">
-                                <span class="action-icon">🌙</span>
-                                <span>Good Night</span>
-                            </button>
-                            <button class="action-btn" onclick="triggerScene('movie_time')">
-                                <span class="action-icon">🎬</span>
-                                <span>Movie Time</span>
-                            </button>
-                            <button class="action-btn" onclick="triggerScene('away_mode')">
-                                <span class="action-icon">🚪</span>
-                                <span>Away Mode</span>
-                            </button>
+
+                    <!-- Quick Actions -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Quick Actions</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="action-grid">
+                                <button class="action-btn" onclick="triggerScene('welcome_home')">
+                                    <span class="action-icon">🏡</span>
+                                    <span>Welcome Home</span>
+                                </button>
+                                <button class="action-btn" onclick="triggerScene('good_night')">
+                                    <span class="action-icon">🌙</span>
+                                    <span>Good Night</span>
+                                </button>
+                                <button class="action-btn" onclick="triggerScene('movie_time')">
+                                    <span class="action-icon">🎬</span>
+                                    <span>Movie Time</span>
+                                </button>
+                                <button class="action-btn" onclick="triggerScene('away_mode')">
+                                    <span class="action-icon">🚪</span>
+                                    <span>Away Mode</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -416,12 +428,53 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <h3>Calendar Sync</h3>
-                            <span class="badge badge-warning">Not Configured</span>
+                            <h3>📅 Calendar</h3>
+                            <span class="badge badge-warning" id="calendarStatus">Not Configured</span>
                         </div>
                         <div class="card-body">
-                            <p>Sync with Google Calendar or iCal for upcoming events.</p>
-                            <button class="btn btn-secondary">Setup</button>
+                            <div class="form-group">
+                                <label>Calendar Provider</label>
+                                <select id="calendarProvider" class="form-control" onchange="toggleCalendarProvider()">
+                                    <option value="none">None - Disabled</option>
+                                    <option value="homeassistant">Home Assistant</option>
+                                </select>
+                            </div>
+
+                            <!-- None/Disabled Settings -->
+                            <div id="calendarNoneSettings" style="display: none;">
+                                <p class="help-text">Calendar integration is disabled.</p>
+                                <button class="btn btn-primary" onclick="saveCalendarSettings()">Save Settings</button>
+                            </div>
+
+                            <!-- Home Assistant Calendar Settings -->
+                            <div id="calendarHaSettings" style="display: none;">
+                                <div class="form-group">
+                                    <label>Calendar Entity ID</label>
+                                    <input type="text" id="haCalendarEntity" placeholder="calendar.family" class="form-control">
+                                    <p class="help-text" style="margin-top: 0.25rem; font-size: 0.75rem;">Find in HA → Developer Tools → States → Search "calendar."</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="calendarShowToday" checked> Show all events today
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="calendarShowTomorrow" checked> Show tomorrow's events
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>Max Events to Display</label>
+                                    <select id="calendarMaxEvents" class="form-control">
+                                        <option value="3">3 events</option>
+                                        <option value="5" selected>5 events</option>
+                                        <option value="7">7 events</option>
+                                        <option value="10">10 events</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-primary" onclick="saveCalendarSettings()">Save Settings</button>
+                                <button class="btn btn-secondary" onclick="testCalendar()">Test Connection</button>
+                            </div>
                         </div>
                     </div>
 

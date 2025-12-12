@@ -127,6 +127,26 @@ void setupSystem() {
     ledFeedback.showWiFiConnected();
     Serial.println("✓");
     
+    // 2.5. NTP Time Sync
+    Serial.print("→ NTP time sync... ");
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    // Wait for time to be set (max 10 seconds)
+    time_t now = 0;
+    int retry = 0;
+    while (now < 1000000000 && retry < 20) {
+        delay(500);
+        time(&now);
+        retry++;
+    }
+    if (now > 1000000000) {
+        struct tm* timeinfo = localtime(&now);
+        char timeStr[30];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+        Serial.printf("✓ (%s)\n", timeStr);
+    } else {
+        Serial.println("✗ WARNING: Time sync failed");
+    }
+    
     // 3. MQTT
     Serial.print("→ MQTT client... ");
     mqttClient.begin();

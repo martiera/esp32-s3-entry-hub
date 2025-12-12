@@ -68,8 +68,14 @@
             "location": "London"
         },
         "calendar": {
-            "enabled": false,
-            "url": ""
+            "enabled": true,
+            "provider": "homeassistant",
+            "home_assistant": {
+                "entity_id": "calendar.meistaru34_gmail_com",
+                "show_today": true,
+                "show_tomorrow": true,
+                "max_events": 5
+            }
         }
     },
     "presence": {

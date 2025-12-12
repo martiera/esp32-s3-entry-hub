@@ -42,6 +42,8 @@ private:
     void handleGetWeather(AsyncWebServerRequest *request);
     void handleOpenWeatherMap(AsyncWebServerRequest *request, JsonDocument& config);
     void handleHomeAssistantWeather(AsyncWebServerRequest *request, JsonDocument& config);
+    void handleGetCalendar(AsyncWebServerRequest *request);
+    void handleHomeAssistantCalendar(AsyncWebServerRequest *request, JsonDocument& config);
     void handleSaveWeatherConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleSaveHomeAssistantConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleCheckHomeAssistantConnection(AsyncWebServerRequest *request);

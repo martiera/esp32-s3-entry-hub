@@ -124,6 +124,11 @@ void WebServerManager::setupAPIEndpoints() {
     server.on("/api/weather", HTTP_GET, [this](AsyncWebServerRequest *request) {
         handleGetWeather(request);
     });
+    
+    // Calendar
+    server.on("/api/calendar", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleGetCalendar(request);
+    });
 }
 
 void WebServerManager::handleRoot(AsyncWebServerRequest *request) {
@@ -644,6 +649,177 @@ void WebServerManager::handleHomeAssistantWeather(AsyncWebServerRequest *request
         error += httpCode;
         error += "}";
         request->send(500, "application/json", error);
+    }
+}
+
+void WebServerManager::handleGetCalendar(AsyncWebServerRequest *request) {
+    JsonDocument config;
+    
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
+    }
+    
+    // Check if calendar is enabled
+    bool enabled = config["integrations"]["calendar"]["enabled"] | false;
+    const char* provider = config["integrations"]["calendar"]["provider"] | "none";
+    
+    if (!enabled || strcmp(provider, "none") == 0) {
+        request->send(200, "application/json", "{\"configured\":false,\"error\":\"Calendar not configured\"}");
+        return;
+    }
+    
+    if (strcmp(provider, "homeassistant") == 0) {
+        handleHomeAssistantCalendar(request, config);
+    } else {
+        request->send(400, "application/json", "{\"error\":\"Unknown calendar provider\"}");
+    }
+}
+
+void WebServerManager::handleHomeAssistantCalendar(AsyncWebServerRequest *request, JsonDocument& config) {
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    const char* entityId = config["integrations"]["calendar"]["home_assistant"]["entity_id"] | "calendar.family";
+    int maxEvents = config["integrations"]["calendar"]["home_assistant"]["max_events"] | 5;
+    
+    if (!haUrl || strlen(haUrl) == 0) {
+        request->send(400, "application/json", "{\"error\":\"Home Assistant URL not configured\"}");
+        return;
+    }
+    
+    if (!haToken || strlen(haToken) == 0) {
+        request->send(400, "application/json", "{\"error\":\"Home Assistant token not configured\"}");
+        return;
+    }
+    
+    // Build URL for calendar events
+    // HA calendar API: /api/calendars/<entity_id>?start=<datetime>&end=<datetime>
+    String url = String(haUrl);
+    if (!url.endsWith("/")) url += "/";
+    url += "api/calendars/";
+    url += entityId;
+    
+    // Get events for today and next 7 days
+    // Format: YYYY-MM-DD (simpler format that HA accepts)
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    
+    char startDate[12];
+    char endDate[12];
+    
+    // Start: today
+    snprintf(startDate, sizeof(startDate), "%04d-%02d-%02d",
+             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday);
+    
+    // End: 7 days from now
+    time_t endTime = now + (7 * 24 * 60 * 60);
+    struct tm* endTimeinfo = localtime(&endTime);
+    snprintf(endDate, sizeof(endDate), "%04d-%02d-%02d",
+             endTimeinfo->tm_year + 1900, endTimeinfo->tm_mon + 1, endTimeinfo->tm_mday);
+    
+    url += "?start=";
+    url += startDate;
+    url += "&end=";
+    url += endDate;
+    
+    Serial.printf("Calendar API URL: %s\n", url.c_str());
+    
+    // Make HTTP request
+    HTTPClient http;
+    http.begin(url);
+    
+    String auth = "Bearer ";
+    auth += haToken;
+    http.addHeader("Authorization", auth);
+    http.addHeader("Content-Type", "application/json");
+    
+    int httpCode = http.GET();
+    Serial.printf("Calendar API response code: %d\n", httpCode);
+    
+    if (httpCode == 200) {
+        String payload = http.getString();
+        http.end();
+        
+        Serial.printf("Calendar API response: %s\n", payload.substring(0, 500).c_str());
+        
+        // Parse HA calendar response
+        JsonDocument haDoc;
+        DeserializationError error = deserializeJson(haDoc, payload);
+        
+        if (error) {
+            Serial.printf("Calendar JSON parse error: %s\n", error.c_str());
+            request->send(500, "application/json", "{\"error\":\"Failed to parse calendar response\"}");
+            return;
+        }
+        
+        // Transform to our format and limit events
+        JsonDocument response;
+        response["provider"] = "homeassistant";
+        response["entity_id"] = entityId;
+        
+        JsonArray events = response["events"].to<JsonArray>();
+        int count = 0;
+        
+        // HA returns array of events directly
+        JsonArray haEvents = haDoc.as<JsonArray>();
+        Serial.printf("Calendar events count from HA: %d\n", haEvents.size());
+        
+        for (JsonVariant event : haEvents) {
+            if (count >= maxEvents) break;
+            
+            JsonObject evt = events.add<JsonObject>();
+            evt["summary"] = event["summary"];
+            
+            // Handle both dateTime and date formats
+            if (event["start"]["dateTime"]) {
+                evt["start"] = event["start"]["dateTime"];
+                evt["all_day"] = false;
+            } else if (event["start"]["date"]) {
+                evt["start"] = event["start"]["date"];
+                evt["all_day"] = true;
+            } else {
+                // Fallback - try direct start value
+                evt["start"] = event["start"];
+                evt["all_day"] = false;
+            }
+            
+            if (event["end"]["dateTime"]) {
+                evt["end"] = event["end"]["dateTime"];
+            } else if (event["end"]["date"]) {
+                evt["end"] = event["end"]["date"];
+            } else {
+                evt["end"] = event["end"];
+            }
+            
+            if (event["description"]) {
+                evt["description"] = event["description"];
+            }
+            if (event["location"]) {
+                evt["location"] = event["location"];
+            }
+            
+            count++;
+        }
+        
+        String output;
+        serializeJson(response, output);
+        request->send(200, "application/json", output);
+    } else {
+        String errorBody = http.getString();
+        http.end();
+        Serial.printf("Calendar API error: %s\n", errorBody.c_str());
+        
+        String errorMsg;
+        if (httpCode == 404) {
+            errorMsg = "{\"error\":\"Calendar entity not found. Check entity ID.\"}";
+        } else if (httpCode == 401) {
+            errorMsg = "{\"error\":\"Unauthorized. Check HA token.\"}";
+        } else {
+            errorMsg = "{\"error\":\"Failed to fetch calendar\",\"code\":";
+            errorMsg += httpCode;
+            errorMsg += "}";
+        }
+        request->send(httpCode >= 400 && httpCode < 500 ? httpCode : 500, "application/json", errorMsg);
     }
 }
 

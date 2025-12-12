@@ -183,6 +183,7 @@ async function loadInitialData() {
         loadCommands(),
         loadPresence(),
         loadWeather(),
+        loadCalendar(),
         loadIntegrations()
     ]);
 }
@@ -375,6 +376,227 @@ async function loadWeather() {
         if (weatherIcon) {
             weatherIcon.textContent = '⚠️';
         }
+    }
+}
+
+// Calendar Functions
+async function loadCalendar() {
+    const widget = document.getElementById('calendarWidget');
+    if (!widget) return;
+    
+    try {
+        const data = await apiGet('calendar');
+        
+        if (data && !data.error && data.events && data.events.length > 0) {
+            renderCalendarEvents(data.events);
+        } else if (data && data.error) {
+            widget.innerHTML = `<div class="calendar-no-events">${data.error}</div>`;
+        } else {
+            widget.innerHTML = '<div class="calendar-no-events">No upcoming events</div>';
+        }
+    } catch (error) {
+        console.error('Failed to load calendar:', error);
+        widget.innerHTML = '<div class="calendar-no-events">Failed to load calendar</div>';
+    }
+}
+
+function renderCalendarEvents(events) {
+    const widget = document.getElementById('calendarWidget');
+    if (!widget) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfter = new Date(today);
+    dayAfter.setDate(dayAfter.getDate() + 2);
+    
+    // Group events by day
+    const todayEvents = [];
+    const tomorrowEvents = [];
+    const laterEvents = [];
+    
+    events.forEach(event => {
+        const eventDate = new Date(event.start);
+        eventDate.setHours(0, 0, 0, 0);
+        
+        if (eventDate.getTime() === today.getTime()) {
+            todayEvents.push(event);
+        } else if (eventDate.getTime() === tomorrow.getTime()) {
+            tomorrowEvents.push(event);
+        } else if (eventDate > tomorrow) {
+            laterEvents.push(event);
+        }
+    });
+    
+    let html = '';
+    
+    // Today's events
+    if (todayEvents.length > 0) {
+        html += '<div class="calendar-day-header">📍 Today</div>';
+        todayEvents.forEach(event => {
+            html += renderCalendarEvent(event);
+        });
+    }
+    
+    // Tomorrow's events
+    if (tomorrowEvents.length > 0) {
+        html += '<div class="calendar-day-header">Tomorrow</div>';
+        tomorrowEvents.forEach(event => {
+            html += renderCalendarEvent(event);
+        });
+    }
+    
+    // Later events (if space allows)
+    if (laterEvents.length > 0 && (todayEvents.length + tomorrowEvents.length) < 4) {
+        html += '<div class="calendar-day-header">Upcoming</div>';
+        laterEvents.slice(0, 3).forEach(event => {
+            html += renderCalendarEvent(event, true);
+        });
+    }
+    
+    if (html === '') {
+        html = '<div class="calendar-no-events">No upcoming events</div>';
+    }
+    
+    widget.innerHTML = html;
+}
+
+function renderCalendarEvent(event, showDate = false) {
+    const startDate = new Date(event.start);
+    const isAllDay = event.all_day || (startDate.getHours() === 0 && startDate.getMinutes() === 0);
+    
+    let timeStr;
+    if (isAllDay) {
+        timeStr = '<span class="calendar-event-allday">All day</span>';
+    } else {
+        timeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    
+    if (showDate) {
+        const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
+        timeStr = `<div>${dateStr}</div><div>${isAllDay ? 'All day' : timeStr}</div>`;
+    }
+    
+    return `
+        <div class="calendar-event">
+            <div class="calendar-event-time">${timeStr}</div>
+            <div class="calendar-event-title">${escapeHtml(event.summary || event.title || 'Untitled')}</div>
+        </div>
+    `;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Calendar Settings
+function toggleCalendarProvider() {
+    const provider = document.getElementById('calendarProvider').value;
+    document.getElementById('calendarNoneSettings').style.display = provider === 'none' ? 'block' : 'none';
+    document.getElementById('calendarHaSettings').style.display = provider === 'homeassistant' ? 'block' : 'none';
+}
+
+async function loadCalendarConfig() {
+    try {
+        const config = await apiGet('config');
+        if (!config) return;
+        
+        const calendar = config.integrations?.calendar;
+        if (calendar) {
+            const provider = calendar.provider || (calendar.enabled ? 'homeassistant' : 'none');
+            document.getElementById('calendarProvider').value = provider;
+            
+            if (calendar.home_assistant) {
+                document.getElementById('haCalendarEntity').value = calendar.home_assistant.entity_id || 'calendar.family';
+                document.getElementById('calendarShowToday').checked = calendar.home_assistant.show_today !== false;
+                document.getElementById('calendarShowTomorrow').checked = calendar.home_assistant.show_tomorrow !== false;
+                document.getElementById('calendarMaxEvents').value = calendar.home_assistant.max_events || 5;
+            }
+            
+            toggleCalendarProvider();
+            
+            // Update status badge
+            const statusEl = document.getElementById('calendarStatus');
+            if (statusEl && provider !== 'none') {
+                statusEl.textContent = 'Configured';
+                statusEl.className = 'badge badge-success';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load calendar config:', error);
+    }
+}
+
+async function saveCalendarSettings() {
+    try {
+        const config = await apiGet('config');
+        if (!config) {
+            showNotification('Failed to load config', 'error');
+            return;
+        }
+        
+        const provider = document.getElementById('calendarProvider').value;
+        
+        config.integrations = config.integrations || {};
+        config.integrations.calendar = {
+            enabled: provider !== 'none',
+            provider: provider,
+            home_assistant: {
+                entity_id: document.getElementById('haCalendarEntity').value || 'calendar.family',
+                show_today: document.getElementById('calendarShowToday').checked,
+                show_tomorrow: document.getElementById('calendarShowTomorrow').checked,
+                max_events: parseInt(document.getElementById('calendarMaxEvents').value) || 5
+            }
+        };
+        
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (response.ok) {
+            showNotification('Calendar settings saved', 'success');
+            loadCalendar();
+            
+            // Update status badge
+            const statusEl = document.getElementById('calendarStatus');
+            if (statusEl) {
+                if (provider !== 'none') {
+                    statusEl.textContent = 'Configured';
+                    statusEl.className = 'badge badge-success';
+                } else {
+                    statusEl.textContent = 'Disabled';
+                    statusEl.className = 'badge badge-warning';
+                }
+            }
+        } else {
+            showNotification('Failed to save settings', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save calendar settings:', error);
+        showNotification('Error saving settings', 'error');
+    }
+}
+
+async function testCalendar() {
+    showNotification('Testing calendar connection...', 'info');
+    
+    try {
+        const data = await apiGet('calendar');
+        
+        if (data && !data.error) {
+            const eventCount = data.events ? data.events.length : 0;
+            showNotification(`Calendar connected! Found ${eventCount} upcoming events.`, 'success');
+            loadCalendar();
+        } else {
+            showNotification(data?.error || 'Failed to connect to calendar', 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to test calendar: ' + error.message, 'error');
     }
 }
 
@@ -986,5 +1208,6 @@ navigateToPage = function(pageName) {
     originalNavigateToPage(pageName);
     if (pageName === 'integrations') {
         loadWeatherConfig();
+        loadCalendarConfig();
     }
 };
