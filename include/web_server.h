@@ -52,6 +52,9 @@ private:
     void handleGetHomeAssistantCalendarEntities(AsyncWebServerRequest *request);
     void handleValidateMqtt(AsyncWebServerRequest *request);
     void handleTestMqtt(AsyncWebServerRequest *request);
+    void handleAcknowledgeNotification(AsyncWebServerRequest *request);
+    void handleTestNotification(AsyncWebServerRequest *request);
+    void handleGetActiveNotification(AsyncWebServerRequest *request);
     
     // WebSocket handlers
     static void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 

@@ -34,6 +34,7 @@
 #include "ha_integration.h"
 #include "display_manager.h"
 #include "led_feedback.h"
+#include "notification_manager.h"
 
 // System state
 unsigned long lastStatusUpdate = 0;
@@ -78,6 +79,7 @@ void loop() {
     homeAssistant.loop();
     display.loop();
     ledFeedback.loop();
+    notificationManager.loop();
     
     // Audio processing
     audioHandler.loop();
@@ -191,6 +193,11 @@ void setupSystem() {
     Serial.print("→ Display manager... ");
     display.begin();
     Serial.println("✓ (Add display hardware to enable)");
+    
+    // 10. Notification Manager
+    Serial.print("→ Notification manager... ");
+    notificationManager.begin();
+    Serial.println("✓");
     
     // LED to idle state after boot
     ledFeedback.showIdle();

@@ -4,6 +4,7 @@
 #include "mqtt_client.h"
 #include "audio_handler.h"
 #include "porcupine_handler.h"
+#include "notification_manager.h"
 #include <WiFi.h>
 #include <LittleFS.h>
 #include <HTTPClient.h>
@@ -148,6 +149,19 @@ void WebServerManager::setupAPIEndpoints() {
     // Calendar
     server.on("/api/calendar", HTTP_GET, [this](AsyncWebServerRequest *request) {
         handleGetCalendar(request);
+    });
+    
+    // Notifications
+    server.on("/api/notifications/acknowledge", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        handleAcknowledgeNotification(request);
+    });
+    
+    server.on("/api/notifications/test", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        handleTestNotification(request);
+    });
+    
+    server.on("/api/notifications/active", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        handleGetActiveNotification(request);
     });
 }
 
@@ -1039,4 +1053,24 @@ void WebServerManager::handleTestMqtt(AsyncWebServerRequest *request) {
     // Reload config and trigger reconnection
     mqttClient.forceReconnect();
     request->send(200, "application/json", "{\"success\":true}");
+}
+
+void WebServerManager::handleAcknowledgeNotification(AsyncWebServerRequest *request) {
+    notificationManager.acknowledge();
+    request->send(200, "application/json", "{\"success\":true}");
+}
+
+void WebServerManager::handleTestNotification(AsyncWebServerRequest *request) {
+    notificationManager.notifyCustom("Test notification from web UI", LedColor::Purple(), LedPattern::PULSE);
+    request->send(200, "application/json", "{\"success\":true}");
+}
+
+void WebServerManager::handleGetActiveNotification(AsyncWebServerRequest *request) {
+    JsonDocument doc;
+    doc["active"] = notificationManager.hasActiveNotification();
+    doc["message"] = notificationManager.getCurrentNotification();
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
 }

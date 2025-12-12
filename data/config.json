@@ -84,5 +84,40 @@
         "home_assistant": {
             "entity_ids": []
         }
+    },
+    "notifications": {
+        "enabled": true,
+        "calendar_reminder": {
+            "enabled": true,
+            "duration": 5000
+        },
+        "presence_change": {
+            "enabled": true,
+            "duration": 3000
+        },
+        "weather_alert": {
+            "enabled": true,
+            "duration": 10000
+        },
+        "connection_issue": {
+            "enabled": true,
+            "duration": 5000
+        },
+        "system_update": {
+            "enabled": true,
+            "duration": 5000
+        },
+        "configuration_needed": {
+            "enabled": true,
+            "duration": 0
+        },
+        "door_event": {
+            "enabled": true,
+            "duration": 2000
+        },
+        "custom": {
+            "enabled": true,
+            "duration": 3000
+        }
     }
 }

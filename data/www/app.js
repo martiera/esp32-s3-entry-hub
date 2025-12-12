@@ -1547,3 +1547,118 @@ async function testMqttConnection() {
         showNotification('Failed to test MQTT connection', 'error');
     }
 }
+
+// ==================== Notification Functions ====================
+
+async function loadNotificationSettings() {
+    try {
+        const config = await apiGet('config');
+        if (!config || !config.notifications) return;
+        
+        const notif = config.notifications;
+        document.getElementById('notificationsEnabled').checked = notif.enabled !== false;
+        document.getElementById('notifyCalendar').checked = notif.calendar_reminder?.enabled !== false;
+        document.getElementById('notifyPresence').checked = notif.presence_change?.enabled !== false;
+        document.getElementById('notifyWeather').checked = notif.weather_alert?.enabled !== false;
+        document.getElementById('notifyConnection').checked = notif.connection_issue?.enabled !== false;
+        document.getElementById('notifyUpdate').checked = notif.system_update?.enabled !== false;
+        document.getElementById('notifyConfig').checked = notif.configuration_needed?.enabled !== false;
+        document.getElementById('notifyDoor').checked = notif.door_event?.enabled !== false;
+        document.getElementById('notifyCustom').checked = notif.custom?.enabled !== false;
+        
+        // Check for active notifications
+        updateActiveNotificationDisplay();
+    } catch (error) {
+        console.error('Failed to load notification settings:', error);
+    }
+}
+
+async function saveNotificationSettings() {
+    try {
+        const config = await apiGet('config');
+        if (!config) {
+            showNotification('Failed to load config', 'error');
+            return;
+        }
+        
+        config.notifications = config.notifications || {};
+        config.notifications.enabled = document.getElementById('notificationsEnabled').checked;
+        
+        config.notifications.calendar_reminder = { enabled: document.getElementById('notifyCalendar').checked };
+        config.notifications.presence_change = { enabled: document.getElementById('notifyPresence').checked };
+        config.notifications.weather_alert = { enabled: document.getElementById('notifyWeather').checked };
+        config.notifications.connection_issue = { enabled: document.getElementById('notifyConnection').checked };
+        config.notifications.system_update = { enabled: document.getElementById('notifyUpdate').checked };
+        config.notifications.configuration_needed = { enabled: document.getElementById('notifyConfig').checked };
+        config.notifications.door_event = { enabled: document.getElementById('notifyDoor').checked };
+        config.notifications.custom = { enabled: document.getElementById('notifyCustom').checked };
+        
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (response.ok) {
+            showNotification('Notification settings saved', 'success');
+        } else {
+            showNotification('Failed to save notification settings', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save notification settings:', error);
+        showNotification('Failed to save notification settings', 'error');
+    }
+}
+
+async function acknowledgeNotification() {
+    try {
+        await fetch('/api/notifications/acknowledge', { method: 'POST' });
+        showNotification('Notification acknowledged', 'success');
+        updateActiveNotificationDisplay();
+    } catch (error) {
+        console.error('Failed to acknowledge notification:', error);
+    }
+}
+
+async function testNotification() {
+    try {
+        await fetch('/api/notifications/test', { method: 'POST' });
+        showNotification('Test notification triggered!', 'info');
+    } catch (error) {
+        console.error('Failed to trigger test notification:', error);
+    }
+}
+
+async function updateActiveNotificationDisplay() {
+    try {
+        const response = await fetch('/api/notifications/active');
+        const data = await response.json();
+        
+        const textElement = document.getElementById('activeNotificationText');
+        const btn = document.getElementById('acknowledgeBtn');
+        
+        if (data && data.active && data.message) {
+            textElement.textContent = `Active: ${data.message}`;
+            textElement.style.color = '#FFC107';
+            btn.disabled = false;
+        } else {
+            textElement.textContent = 'No active notifications';
+            textElement.style.color = '#666';
+            btn.disabled = true;
+        }
+    } catch (error) {
+        console.error('Failed to get active notification:', error);
+    }
+}
+
+// Auto-refresh active notification status
+setInterval(updateActiveNotificationDisplay, 5000);
+
+// Load notification settings when navigating to page
+const originalNavigateToPageNotif = navigateToPage;
+navigateToPage = function(pageName) {
+    originalNavigateToPageNotif(pageName);
+    if (pageName === 'notifications') {
+        loadNotificationSettings();
+    }
+};

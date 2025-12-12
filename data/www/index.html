@@ -41,6 +41,10 @@
                     <span class="icon">🔗</span>
                     <span>Integrations</span>
                 </a>
+                <a href="#notifications" class="nav-item" data-page="notifications">
+                    <span class="icon">🔔</span>
+                    <span>Notifications</span>
+                </a>
                 <a href="#config" class="nav-item" data-page="config">
                     <span class="icon">⚙️</span>
                     <span>Settings</span>
@@ -532,6 +536,142 @@
                             <button class="btn btn-primary" onclick="saveMqttSettings()">Save Settings</button>
                             <button class="btn btn-secondary" onclick="testMqttConnection()" id="mqttTestBtn" style="display: none;">Test Connection</button>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Notifications Page -->
+            <section id="page-notifications" class="page">
+                <div class="page-header">
+                    <h2>LED Notifications</h2>
+                    <p>Configure LED feedback for different events</p>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Master Control</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="notificationsEnabled" checked> Enable LED Notifications
+                            </label>
+                            <p class="help-text">Master switch for all LED notification patterns</p>
+                        </div>
+                        <div class="form-group">
+                            <button class="btn btn-secondary" id="acknowledgeBtn" onclick="acknowledgeNotification()">Clear Active Notification</button>
+                            <span id="activeNotificationText" style="margin-left: 1rem; color: #666;"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-header">
+                        <h3>Notification Types</h3>
+                    </div>
+                    <div class="card-body">
+                        <!-- Calendar Reminder -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyCalendar" checked>
+                                    <strong>📅 Calendar Reminder</strong>
+                                </label>
+                                <span class="badge" style="background: #4A9EFF;">Blue Pulse</span>
+                            </div>
+                            <p class="help-text">Notify when calendar events are upcoming</p>
+                        </div>
+
+                        <!-- Presence Change -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyPresence" checked>
+                                    <strong>👥 Presence Change</strong>
+                                </label>
+                                <span class="badge" style="background: #4CAF50;">Green Blink</span>
+                            </div>
+                            <p class="help-text">Notify when family members arrive or leave</p>
+                        </div>
+
+                        <!-- Weather Alert -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyWeather" checked>
+                                    <strong>⛈️ Weather Alert</strong>
+                                </label>
+                                <span class="badge" style="background: #F44336;">Red Blink</span>
+                            </div>
+                            <p class="help-text">Notify for severe weather warnings</p>
+                        </div>
+
+                        <!-- Connection Issue -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyConnection" checked>
+                                    <strong>📡 Connection Issue</strong>
+                                </label>
+                                <span class="badge" style="background: #FFC107;">Yellow Blink</span>
+                            </div>
+                            <p class="help-text">Notify when WiFi, MQTT, or Home Assistant disconnects</p>
+                        </div>
+
+                        <!-- System Update -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyUpdate" checked>
+                                    <strong>🔄 System Update</strong>
+                                </label>
+                                <span class="badge" style="background: #00BCD4;">Cyan Pulse</span>
+                            </div>
+                            <p class="help-text">Notify when firmware updates are available</p>
+                        </div>
+
+                        <!-- Configuration Needed -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyConfig" checked>
+                                    <strong>⚙️ Configuration Needed</strong>
+                                </label>
+                                <span class="badge" style="background: #FF9800;">Orange Blink</span>
+                            </div>
+                            <p class="help-text">Notify when initial setup or configuration is required</p>
+                        </div>
+
+                        <!-- Door Event -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyDoor" checked>
+                                    <strong>🚪 Door Event</strong>
+                                </label>
+                                <span class="badge" style="background: #FFFFFF; color: #333;">White Blink</span>
+                            </div>
+                            <p class="help-text">Notify when door sensors detect activity</p>
+                        </div>
+
+                        <!-- Custom -->
+                        <div class="notification-item">
+                            <div class="notification-header">
+                                <label>
+                                    <input type="checkbox" id="notifyCustom" checked>
+                                    <strong>✨ Custom Notifications</strong>
+                                </label>
+                                <span class="badge" style="background: #9C27B0;">Purple</span>
+                            </div>
+                            <p class="help-text">Notify via MQTT messages or API calls</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-20">
+                    <div class="card-body">
+                        <button class="btn btn-primary" onclick="saveNotificationSettings()">Save Settings</button>
+                        <button class="btn btn-secondary" onclick="testNotification()">Test Notification</button>
                     </div>
                 </div>
             </section>
