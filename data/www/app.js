@@ -365,7 +365,7 @@ async function loadWeather() {
             document.getElementById('weatherTemp').textContent = '--°C';
             document.getElementById('weatherCondition').textContent = 'Not configured';
             if (weatherIcon) {
-                weatherIcon.textContent = '☀️';
+                weatherIcon.textContent = '❓';
             }
         }
     } catch (error) {
