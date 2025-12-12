@@ -32,7 +32,7 @@ private:
     // API handlers
     void handleGetStatus(AsyncWebServerRequest *request);
     void handleGetConfig(AsyncWebServerRequest *request);
-    void handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
+    void handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total);
     void handleGetCommands(AsyncWebServerRequest *request);
     void handlePostCommand(AsyncWebServerRequest *request);
     void handleDeleteCommand(AsyncWebServerRequest *request);
@@ -50,6 +50,8 @@ private:
     void handleGetHomeAssistantPersons(AsyncWebServerRequest *request);
     void handleGetHomeAssistantWeatherEntities(AsyncWebServerRequest *request);
     void handleGetHomeAssistantCalendarEntities(AsyncWebServerRequest *request);
+    void handleValidateMqtt(AsyncWebServerRequest *request);
+    void handleTestMqtt(AsyncWebServerRequest *request);
     
     // WebSocket handlers
     static void onWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, 

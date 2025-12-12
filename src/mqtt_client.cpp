@@ -1,24 +1,78 @@
 #include "mqtt_client.h"
 #include "config.h"
-#include "secrets.h"
+#include "storage_manager.h"
 
 MQTTClientManager mqttClient;
 static MqttMessageCallback globalCallback = nullptr;
 
 MQTTClientManager::MQTTClientManager() 
-    : client(espClient), messageCallback(nullptr), lastReconnectAttempt(0) {
+        : client(espClient), messageCallback(nullptr), lastReconnectAttempt(0), reconnectFailures(0),
+            mqttEnabled(false), mqttPort(1883), mqttValidated(false) {
+        memset(mqttBroker, 0, sizeof(mqttBroker));
+        memset(mqttUsername, 0, sizeof(mqttUsername));
+        memset(mqttPassword, 0, sizeof(mqttPassword));
+        strncpy(mqttClientId, "esp32-entry-hub", sizeof(mqttClientId) - 1);
+        strncpy(mqttTopicPrefix, "entryhub", sizeof(mqttTopicPrefix) - 1);
+}
+
+void MQTTClientManager::loadConfig() {
+    JsonDocument config;
+    if (storage.loadConfig(config)) {
+        mqttEnabled = config["mqtt"]["enabled"] | false;
+        mqttValidated = config["mqtt"]["validated"] | false;
+        const char* broker = config["mqtt"]["broker"];
+        if (broker && strlen(broker) > 0) {
+            strncpy(mqttBroker, broker, sizeof(mqttBroker) - 1);
+        }
+        mqttPort = config["mqtt"]["port"] | 1883;
+        const char* username = config["mqtt"]["username"];
+        if (username) {
+            strncpy(mqttUsername, username, sizeof(mqttUsername) - 1);
+        }
+        const char* password = config["mqtt"]["password"];
+        if (password) {
+            strncpy(mqttPassword, password, sizeof(mqttPassword) - 1);
+        }
+        const char* clientId = config["mqtt"]["client_id"];
+        if (clientId && strlen(clientId) > 0) {
+            strncpy(mqttClientId, clientId, sizeof(mqttClientId) - 1);
+        }
+        const char* topicPrefix = config["mqtt"]["topic_prefix"];
+        if (topicPrefix && strlen(topicPrefix) > 0) {
+            strncpy(mqttTopicPrefix, topicPrefix, sizeof(mqttTopicPrefix) - 1);
+        }
+    }
+    Serial.printf("MQTT Config: enabled=%d, broker=%s, port=%d, validated=%d\n", 
+                  mqttEnabled, mqttBroker, mqttPort, mqttValidated);
 }
 
 void MQTTClientManager::begin() {
-    client.setServer(MQTT_BROKER, MQTT_PORT);
+    loadConfig();
+    
+    if (!mqttEnabled || strlen(mqttBroker) == 0) {
+        Serial.println("MQTT disabled or not configured");
+        return;
+    }
+    
+    client.setServer(mqttBroker, mqttPort);
     client.setCallback(mqttCallback);
     client.setBufferSize(MQTT_BUFFER_SIZE);
     client.setKeepAlive(MQTT_KEEPALIVE);
     
-    Serial.println("MQTT Client initialized");
+    Serial.printf("MQTT Client initialized - connecting to %s:%d\n", mqttBroker, mqttPort);
+    
+    // Attempt initial connection (regardless of validated flag)
+    reconnect();
 }
 
 void MQTTClientManager::loop() {
+    if (!mqttEnabled || strlen(mqttBroker) == 0) {
+        return;
+    }
+    // Only auto-reconnect if validated
+    if (!mqttValidated) {
+        return;
+    }
     if (!client.connected()) {
         unsigned long now = millis();
         if (now - lastReconnectAttempt >= MQTT_RECONNECT_INTERVAL) {
@@ -27,33 +81,57 @@ void MQTTClientManager::loop() {
         }
     } else {
         client.loop();
+        reconnectFailures = 0; // Reset on successful connection
     }
 }
 
 bool MQTTClientManager::isConnected() {
-    return client.connected();
+    return mqttEnabled && client.connected();
+}
+
+bool MQTTClientManager::isEnabled() {
+    return mqttEnabled && strlen(mqttBroker) > 0;
 }
 
 void MQTTClientManager::reconnect() {
-    Serial.print("Attempting MQTT connection...");
-    
-    String clientId = String(DEVICE_NAME) + "-" + String(ESP.getEfuseMac(), HEX);
-    
-    if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
+    if (!mqttEnabled || strlen(mqttBroker) == 0) {
+        return;
+    }
+    // Limit reconnect attempts if not validated
+    const int MAX_RECONNECT_FAILURES = 3;
+    if (!mqttValidated && reconnectFailures >= MAX_RECONNECT_FAILURES) {
+        Serial.println("MQTT not validated and max reconnect attempts reached. No further retries.");
+        return;
+    }
+    Serial.print("Attempting MQTT connection to ");
+    Serial.print(mqttBroker);
+    Serial.print("...");
+    // Use configured client ID or generate unique one
+    String clientId = String(mqttClientId) + "-" + String(ESP.getEfuseMac() & 0xFFFF, HEX);
+    bool connected = false;
+    if (strlen(mqttUsername) > 0) {
+        connected = client.connect(clientId.c_str(), mqttUsername, mqttPassword);
+    } else {
+        connected = client.connect(clientId.c_str());
+    }
+    if (connected) {
         Serial.println("connected");
-        
-        // Subscribe to command topics
-        subscribe("entryhub/command");
-        subscribe("entryhub/config");
+        reconnectFailures = 0;
+        // Subscribe to command topics using configured prefix
+        String cmdTopic = String(mqttTopicPrefix) + "/command";
+        String cfgTopic = String(mqttTopicPrefix) + "/config";
+        subscribe(cmdTopic.c_str());
+        subscribe(cfgTopic.c_str());
         subscribe("homeassistant/+/+/state");
-        
         // Publish online status
         publishStatus("online");
-        
     } else {
+        reconnectFailures++;
         Serial.print("failed, rc=");
         Serial.print(client.state());
-        Serial.println(" retrying later");
+        Serial.print(" retrying later (failures: ");
+        Serial.print(reconnectFailures);
+        Serial.println(")");
     }
 }
 
@@ -101,7 +179,7 @@ void MQTTClientManager::mqttCallback(char* topic, byte* payload, unsigned int le
 }
 
 String MQTTClientManager::getTopicPrefix() {
-    return "entryhub";
+    return String(mqttTopicPrefix);
 }
 
 void MQTTClientManager::publishStatus(const char* status) {
@@ -113,7 +191,8 @@ void MQTTClientManager::publishStatus(const char* status) {
     doc["free_heap"] = ESP.getFreeHeap();
     doc["version"] = DEVICE_VERSION;
     
-    publishJson("entryhub/status", doc, true);
+    String topic = String(mqttTopicPrefix) + "/status";
+    publishJson(topic.c_str(), doc, true);
 }
 
 void MQTTClientManager::publishVoiceDetection(const char* wakeWord) {
@@ -121,7 +200,8 @@ void MQTTClientManager::publishVoiceDetection(const char* wakeWord) {
     doc["wake_word"] = wakeWord;
     doc["timestamp"] = millis();
     
-    publishJson("entryhub/voice/detected", doc);
+    String topic = String(mqttTopicPrefix) + "/voice/detected";
+    publishJson(topic.c_str(), doc);
 }
 
 void MQTTClientManager::publishCommandExecuted(const char* command, const char* result) {
@@ -130,7 +210,8 @@ void MQTTClientManager::publishCommandExecuted(const char* command, const char* 
     doc["result"] = result;
     doc["timestamp"] = millis();
     
-    publishJson("entryhub/command/executed", doc);
+    String topic = String(mqttTopicPrefix) + "/command/executed";
+    publishJson(topic.c_str(), doc);
 }
 
 void MQTTClientManager::publishPresenceUpdate(const char* person, bool present) {
@@ -139,5 +220,20 @@ void MQTTClientManager::publishPresenceUpdate(const char* person, bool present) 
     doc["present"] = present;
     doc["timestamp"] = millis();
     
-    publishJson("entryhub/presence/status", doc);
+    String topic = getTopicPrefix() + "/presence";
+    publishJson(topic.c_str(), doc);
+}
+
+void MQTTClientManager::forceReconnect() {
+    Serial.println("Force reconnecting MQTT...");
+    reconnectFailures = 0; // Reset failure count for forced reconnect
+    loadConfig(); // Reload config to get latest settings
+    
+    // Reconfigure client with new settings
+    if (mqttEnabled && strlen(mqttBroker) > 0) {
+        client.setServer(mqttBroker, mqttPort);
+        reconnect();
+    } else {
+        Serial.println("MQTT not configured for connection");
+    }
 }

@@ -66,8 +66,11 @@ bool StorageManager::readFile(const char* path, String& content) {
 
 bool StorageManager::writeFile(const char* path, const String& content) {
     if (!initialized) {
+        Serial.println("Storage not initialized");
         return false;
     }
+    
+    Serial.printf("Writing to %s (%d bytes)\n", path, content.length());
     
     File file = LittleFS.open(path, "w");
     if (!file) {
@@ -77,6 +80,12 @@ bool StorageManager::writeFile(const char* path, const String& content) {
     
     size_t bytesWritten = file.print(content);
     file.close();
+    
+    if (bytesWritten > 0) {
+        Serial.printf("Successfully wrote %d bytes to %s\n", bytesWritten, path);
+    } else {
+        Serial.printf("Failed to write to %s\n", path);
+    }
     
     return bytesWritten > 0;
 }

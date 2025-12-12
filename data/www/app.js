@@ -1323,5 +1323,227 @@ navigateToPage = function(pageName) {
     if (pageName === 'integrations') {
         loadWeatherConfig();
         loadCalendarConfig();
+        loadMqttConfig();
     }
 };
+
+// ==================== MQTT Functions ====================
+
+function toggleMqttSettings() {
+    const enabled = document.getElementById('mqttEnabled').checked;
+    document.getElementById('mqttSettings').style.display = enabled ? 'block' : 'none';
+    document.getElementById('mqttTestBtn').style.display = enabled ? 'inline-block' : 'none';
+}
+
+async function loadMqttConfig() {
+    try {
+        const config = await apiGet('config');
+        if (!config) return;
+        
+        const mqtt = config.mqtt || {};
+        const broker = mqtt.broker || '';
+        
+        document.getElementById('mqttEnabled').checked = mqtt.enabled === true;
+        document.getElementById('mqttBroker').value = broker;
+        document.getElementById('mqttPort').value = mqtt.port || 1883;
+        document.getElementById('mqttUsername').value = mqtt.username || '';
+        document.getElementById('mqttPassword').value = mqtt.password || '';
+        document.getElementById('mqttClientId').value = mqtt.client_id || 'esp32-entry-hub';
+        document.getElementById('mqttTopicPrefix').value = mqtt.topic_prefix || 'home/entry-hub';
+        
+        toggleMqttSettings();
+        
+        // Check if properly configured (enabled + valid broker address)
+        const isValidBroker = broker && (isValidIP(broker) || isValidHostname(broker));
+        const isConfigured = mqtt.enabled === true && isValidBroker;
+        
+        // Also check actual connection status
+        if (isConfigured) {
+            await checkMqttConnectionStatus();
+        } else {
+            updateMqttStatus('not-configured');
+        }
+    } catch (error) {
+        console.error('Failed to load MQTT config:', error);
+    }
+}
+
+function isValidIP(str) {
+    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipRegex.test(str)) return false;
+    const parts = str.split('.');
+    return parts.every(p => parseInt(p) >= 0 && parseInt(p) <= 255);
+}
+
+function isValidHostname(str) {
+    // Basic hostname validation
+    const hostnameRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    return hostnameRegex.test(str) && str.length <= 253;
+}
+
+function updateMqttStatus(status) {
+    const statusBadge = document.getElementById('mqttStatus');
+    switch (status) {
+        case 'connected':
+            statusBadge.className = 'badge badge-success';
+            statusBadge.textContent = 'Connected';
+            break;
+        case 'disconnected':
+            statusBadge.className = 'badge badge-danger';
+            statusBadge.textContent = 'Disconnected';
+            break;
+        case 'configured':
+            statusBadge.className = 'badge badge-warning';
+            statusBadge.textContent = 'Configured';
+            break;
+        case 'not-configured':
+        default:
+            statusBadge.className = 'badge badge-secondary';
+            statusBadge.textContent = 'Not Configured';
+            break;
+    }
+}
+
+async function checkMqttConnectionStatus() {
+    try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        
+        if (status.mqtt?.connected === true) {
+            updateMqttStatus('connected');
+        } else {
+            updateMqttStatus('disconnected');
+        }
+    } catch (error) {
+        console.error('Failed to check MQTT status:', error);
+        updateMqttStatus('configured');
+    }
+}
+
+async function saveMqttSettings() {
+    try {
+        const config = await apiGet('config');
+        if (!config) {
+            showNotification('Failed to load config', 'error');
+            return;
+        }
+        
+        const enabled = document.getElementById('mqttEnabled').checked;
+        const broker = document.getElementById('mqttBroker').value.trim();
+        
+        if (enabled && !broker) {
+            showNotification('Please enter MQTT broker address', 'error');
+            return;
+        }
+        
+        if (enabled && broker && !isValidIP(broker) && !isValidHostname(broker)) {
+            showNotification('Please enter a valid broker IP or hostname', 'error');
+            return;
+        }
+        
+        config.mqtt = {
+            enabled: enabled,
+            broker: broker,
+            port: parseInt(document.getElementById('mqttPort').value) || 1883,
+            username: document.getElementById('mqttUsername').value.trim(),
+            password: document.getElementById('mqttPassword').value,
+            client_id: document.getElementById('mqttClientId').value.trim() || 'esp32-entry-hub',
+            topic_prefix: document.getElementById('mqttTopicPrefix').value.trim() || 'home/entry-hub'
+        };
+        
+        const response = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (response.ok) {
+            showNotification('MQTT settings saved. Restart device to apply changes.', 'success');
+            // Update status based on what was saved
+            if (enabled && broker) {
+                updateMqttStatus('configured');
+            } else {
+                updateMqttStatus('not-configured');
+            }
+        } else {
+            showNotification('Failed to save MQTT settings', 'error');
+        }
+    } catch (error) {
+        console.error('Failed to save MQTT settings:', error);
+        showNotification('Failed to save MQTT settings', 'error');
+    }
+}
+
+async function testMqttConnection() {
+    showNotification('Testing MQTT connection...', 'info');
+    try {
+        // First, validate and save the current settings
+        const config = await apiGet('config');
+        if (!config) {
+            showNotification('Failed to load config', 'error');
+            return;
+        }
+        
+        const enabled = document.getElementById('mqttEnabled').checked;
+        const broker = document.getElementById('mqttBroker').value.trim();
+        
+        if (!enabled) {
+            showNotification('Please enable MQTT first', 'error');
+            return;
+        }
+        
+        if (!broker) {
+            showNotification('Please enter MQTT broker address', 'error');
+            return;
+        }
+        
+        if (!isValidIP(broker) && !isValidHostname(broker)) {
+            showNotification('Please enter a valid broker IP or hostname', 'error');
+            return;
+        }
+        
+        // Save settings
+        config.mqtt = {
+            enabled: enabled,
+            broker: broker,
+            port: parseInt(document.getElementById('mqttPort').value) || 1883,
+            username: document.getElementById('mqttUsername').value.trim(),
+            password: document.getElementById('mqttPassword').value,
+            client_id: document.getElementById('mqttClientId').value.trim() || 'esp32-entry-hub',
+            topic_prefix: document.getElementById('mqttTopicPrefix').value.trim() || 'home/entry-hub'
+        };
+        
+        const saveResponse = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+        
+        if (!saveResponse.ok) {
+            showNotification('Failed to save MQTT settings', 'error');
+            return;
+        }
+        
+        // Trigger MQTT reconnection
+        await fetch('/api/mqtt/test', { method: 'POST' });
+        
+        // Wait a bit for connection attempt
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Check status
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        if (status.mqtt?.connected === true) {
+            // Mark config as validated
+            await fetch('/api/mqtt/validate', { method: 'POST' });
+            showNotification('MQTT is connected and validated!', 'success');
+            updateMqttStatus('connected');
+        } else {
+            showNotification('MQTT connection failed. Check broker settings.', 'warning');
+            updateMqttStatus('disconnected');
+        }
+    } catch (error) {
+        console.error('Failed to test MQTT:', error);
+        showNotification('Failed to test MQTT connection', 'error');
+    }
+}

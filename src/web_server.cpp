@@ -11,6 +11,9 @@
 
 WebServerManager webServer;
 
+// Buffer for accumulating body data
+static String bodyBuffer;
+
 WebServerManager::WebServerManager() : server(WEB_SERVER_PORT), ws("/ws") {
 }
 
@@ -63,6 +66,15 @@ void WebServerManager::setupRoutes() {
 }
 
 void WebServerManager::setupAPIEndpoints() {
+            // MQTT validation endpoint
+    server.on("/api/mqtt/validate", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        handleValidateMqtt(request);
+    });
+    
+    // MQTT test connection endpoint
+    server.on("/api/mqtt/test", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        handleTestMqtt(request);
+    });
     // System status
     server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request) {
         handleGetStatus(request);
@@ -102,7 +114,7 @@ void WebServerManager::setupAPIEndpoints() {
     
     server.on("/api/config", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
         [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
-            handlePostConfig(request, data, len);
+            handlePostConfig(request, data, len, index, total);
         });
     
     // Voice commands
@@ -184,12 +196,31 @@ void WebServerManager::handleGetConfig(AsyncWebServerRequest *request) {
     }
 }
 
-void WebServerManager::handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len) {
+void WebServerManager::handlePostConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    // Accumulate body data
+    if (index == 0) {
+        bodyBuffer = "";
+        bodyBuffer.reserve(total);
+    }
+    
+    for (size_t i = 0; i < len; i++) {
+        bodyBuffer += (char)data[i];
+    }
+    
+    // Only process when we have all the data
+    if (index + len != total) {
+        return;
+    }
+    
+    Serial.printf("Received complete config body (%d bytes)\n", bodyBuffer.length());
+    
     JsonDocument newConfig;
-    DeserializationError error = deserializeJson(newConfig, data, len);
+    DeserializationError error = deserializeJson(newConfig, bodyBuffer);
     
     if (error) {
+        Serial.printf("Config parse error: %s\n", error.c_str());
         request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        bodyBuffer = "";
         return;
     }
     
@@ -199,26 +230,36 @@ void WebServerManager::handlePostConfig(AsyncWebServerRequest *request, uint8_t 
     
     JsonDocument config;
     if (!storage.loadConfig(config)) {
+        Serial.println("Warning: Could not load existing config, using defaults");
         config["device"]["name"] = DEVICE_NAME;
     }
     
     // Merge known sections (using modern ArduinoJson syntax)
     if (!newConfig["device"].isNull()) config["device"] = newConfig["device"];
     if (!newConfig["network"].isNull()) config["network"] = newConfig["network"];
-    if (!newConfig["mqtt"].isNull()) config["mqtt"] = newConfig["mqtt"];
+    if (!newConfig["mqtt"].isNull()) {
+        config["mqtt"] = newConfig["mqtt"];
+        // Reset validated flag on config change
+        config["mqtt"]["validated"] = false;
+        Serial.println("MQTT config updated, validated flag reset");
+    }
     if (!newConfig["voice"].isNull()) config["voice"] = newConfig["voice"];
     if (!newConfig["display"].isNull()) config["display"] = newConfig["display"];
     if (!newConfig["weather"].isNull()) config["weather"] = newConfig["weather"];
     if (!newConfig["integrations"].isNull()) config["integrations"] = newConfig["integrations"];
     if (!newConfig["presence"].isNull()) config["presence"] = newConfig["presence"];
     
+    Serial.println("Attempting to save config...");
     if (storage.saveConfig(config)) {
+        Serial.println("Config saved successfully");
         request->send(200, "application/json", "{\"success\":true}");
         // Notify clients of config change
         broadcastMessage("config_updated", "Configuration updated");
     } else {
+        Serial.println("Failed to save config to storage");
         request->send(500, "application/json", "{\"error\":\"Failed to save config\"}");
     }
+    bodyBuffer = ""; // Clear buffer
 }
 
 void WebServerManager::handleGetCommands(AsyncWebServerRequest *request) {
@@ -978,4 +1019,24 @@ void WebServerManager::broadcastMessage(const char* type, const char* message) {
     String output;
     serializeJson(doc, output);
     ws.textAll(output);
+}
+
+void WebServerManager::handleValidateMqtt(AsyncWebServerRequest *request) {
+    JsonDocument config;
+    if (!storage.loadConfig(config)) {
+        request->send(500, "application/json", "{\"error\":\"Failed to load config\"}");
+        return;
+    }
+    config["mqtt"]["validated"] = true;
+    if (storage.saveConfig(config)) {
+        request->send(200, "application/json", "{\"success\":true}");
+    } else {
+        request->send(500, "application/json", "{\"error\":\"Failed to save config\"}");
+    }
+}
+
+void WebServerManager::handleTestMqtt(AsyncWebServerRequest *request) {
+    // Reload config and trigger reconnection
+    mqttClient.forceReconnect();
+    request->send(200, "application/json", "{\"success\":true}");
 }
