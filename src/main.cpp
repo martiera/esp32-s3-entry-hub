@@ -10,15 +10,19 @@
  * - OTA updates
  * - Presence tracking
  * - Weather & calendar widgets
- * - Future: LVGL touchscreen display
+ * - 3.5" ILI9488 IPS Display with FT6236 Touch
+ * - Onboard RGB LED feedback
  * 
- * Hardware: ESP32-S3-WROOM-1
+ * Hardware: ESP32-S3-N16R8 (16MB Flash + 8MB PSRAM)
+ * Display: 3.5" ILI9488 480x320 IPS + FT6236 Capacitive Touch
  * Microphone: INMP441 I2S
+ * LED: Onboard WS2812 RGB (GPIO 48)
  */
 
 #include <Arduino.h>
 #include <HTTPClient.h>
 #include "config.h"
+#include "pins.h"
 #include "secrets.h"
 #include "wifi_manager.h"
 #include "mqtt_client.h"
@@ -29,6 +33,7 @@
 #include "web_server.h"
 #include "ha_integration.h"
 #include "display_manager.h"
+#include "led_feedback.h"
 
 // System state
 unsigned long lastStatusUpdate = 0;
@@ -72,6 +77,7 @@ void loop() {
     webServer.loop();
     homeAssistant.loop();
     display.loop();
+    ledFeedback.loop();
     
     // Audio processing
     audioHandler.loop();
@@ -96,6 +102,15 @@ void loop() {
 void setupSystem() {
     Serial.println("Initializing system components...\n");
     
+    // 0. LED Feedback (first for visual feedback during boot)
+    Serial.print("→ LED feedback... ");
+    if (ledFeedback.begin(LED_PIN, LED_BRIGHTNESS)) {
+        ledFeedback.showBooting();
+        Serial.println("✓");
+    } else {
+        Serial.println("✗ WARNING: LED initialization failed");
+    }
+    
     // 1. Storage (must be first)
     Serial.print("→ Storage system... ");
     if (storage.begin()) {
@@ -107,7 +122,9 @@ void setupSystem() {
     
     // 2. WiFi
     Serial.print("→ WiFi connection... ");
+    ledFeedback.showWiFiConnecting();
     wifiMgr.begin();
+    ledFeedback.showWiFiConnected();
     Serial.println("✓");
     
     // 3. MQTT
@@ -153,7 +170,10 @@ void setupSystem() {
     // 9. Display (placeholder for future)
     Serial.print("→ Display manager... ");
     display.begin();
-    Serial.println("✓ (Placeholder - add display hardware)");
+    Serial.println("✓ (Add display hardware to enable)");
+    
+    // LED to idle state after boot
+    ledFeedback.showIdle();
     
     // Load configuration
     Serial.print("\n→ Loading configuration... ");

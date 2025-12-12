@@ -2,7 +2,8 @@
     "device": {
         "name": "ESP32-EntryHub",
         "version": "1.0.0",
-        "configured": true
+        "configured": true,
+        "board": "ESP32-S3-N16R8"
     },
     "network": {
         "wifi_ssid": "",
@@ -19,10 +20,29 @@
         "enabled": true
     },
     "display": {
-        "enabled": false,
-        "brightness": 255,
+        "enabled": true,
+        "driver": "ILI9488",
+        "width": 480,
+        "height": 320,
+        "rotation": 1,
+        "brightness": 200,
         "auto_sleep": true,
         "sleep_timeout": 60000
+    },
+    "touch": {
+        "enabled": true,
+        "driver": "FT6236",
+        "threshold": 40
+    },
+    "feedback": {
+        "led": {
+            "enabled": true,
+            "pin": 48,
+            "brightness": 128
+        },
+        "speaker": {
+            "enabled": false
+        }
     },
     "weather": {
         "provider": "homeassistant",
