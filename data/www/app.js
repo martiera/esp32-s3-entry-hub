@@ -869,7 +869,28 @@ async function addPerson(entityId, name) {
     trackedPersons.push(entityId);
     
     await savePersonSettings();
-    showPersonSelector(); // Refresh the modal
+    
+    // Update the clicked item in the modal without reloading from API
+    const container = document.getElementById('availablePersonsList');
+    const items = container.querySelectorAll('.available-person-item');
+    items.forEach(item => {
+        if (item.querySelector(`[onclick*="${entityId}"]`) || item.innerHTML.includes(entityId)) {
+            const avatar = getPersonAvatar(name);
+            item.classList.add('disabled');
+            item.setAttribute('onclick', '');
+            item.innerHTML = `
+                <div class="available-person-info">
+                    <span class="available-person-avatar">${avatar}</span>
+                    <div>
+                        <div style="font-weight: 600;">${name.charAt(0).toUpperCase() + name.slice(1)}</div>
+                        <div style="font-size: 0.875rem; color: var(--text-muted);">${entityId}</div>
+                    </div>
+                </div>
+                <span class="badge badge-success">✓ Already tracked</span>
+            `;
+        }
+    });
+    
     showNotification(`Added ${name} to tracking`, 'success');
     
     // Refresh dashboard presence and people list
