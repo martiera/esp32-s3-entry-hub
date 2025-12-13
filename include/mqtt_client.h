@@ -43,6 +43,7 @@ private:
     char mqttClientId[32];
     char mqttTopicPrefix[32];
     bool mqttValidated;
+    bool lastMqttState;
     void loadConfig();
     void reconnect();
     static void mqttCallback(char* topic, byte* payload, unsigned int length);

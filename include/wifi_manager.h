@@ -20,6 +20,8 @@ private:
     WiFiManager wifiManager;
     unsigned long lastReconnectAttempt;
     bool shouldSaveConfig;
+    bool lastWiFiState;
+    int reconnectFailures;
     
     void setupAccessPoint();
     void connectToWiFi();

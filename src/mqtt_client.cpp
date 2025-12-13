@@ -1,13 +1,14 @@
 #include "mqtt_client.h"
 #include "config.h"
 #include "storage_manager.h"
+#include "notification_manager.h"
 
 MQTTClientManager mqttClient;
 static MqttMessageCallback globalCallback = nullptr;
 
 MQTTClientManager::MQTTClientManager() 
         : client(espClient), messageCallback(nullptr), lastReconnectAttempt(0), reconnectFailures(0),
-            mqttEnabled(false), mqttPort(1883), mqttValidated(false) {
+            mqttEnabled(false), mqttPort(1883), mqttValidated(false), lastMqttState(false) {
         memset(mqttBroker, 0, sizeof(mqttBroker));
         memset(mqttUsername, 0, sizeof(mqttUsername));
         memset(mqttPassword, 0, sizeof(mqttPassword));
@@ -73,6 +74,20 @@ void MQTTClientManager::loop() {
     if (!mqttValidated) {
         return;
     }
+    bool currentState = client.connected();
+    
+    // Detect state change
+    if (currentState != lastMqttState) {
+        if (currentState) {
+            Serial.println("MQTT reconnected!");
+            notificationManager.notifyConnectionIssue("MQTT", true);
+        } else {
+            Serial.println("MQTT disconnected!");
+            notificationManager.notifyConnectionIssue("MQTT", false);
+        }
+        lastMqttState = currentState;
+    }
+    
     if (!client.connected()) {
         unsigned long now = millis();
         if (now - lastReconnectAttempt >= MQTT_RECONNECT_INTERVAL) {

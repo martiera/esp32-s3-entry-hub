@@ -57,6 +57,7 @@
 // ============================================
 #define WIFI_TIMEOUT_MS         20000
 #define WIFI_RECONNECT_INTERVAL 30000
+#define WIFI_MAX_RECONNECT_FAILURES 10  // Reboot after 10 failed attempts (~5 minutes)
 
 // MQTT
 #define MQTT_RECONNECT_INTERVAL 5000
