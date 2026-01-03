@@ -1,8 +1,11 @@
 #include "led_feedback.h"
 #include "pins.h"
+#include <FastLED.h>
 
-// ESP32-S3 built-in rgbLedWrite function for WS2812
-// This is provided by the Arduino ESP32 core
+// FastLED for WS2812 RGB LED on ESP32-S3
+#define NUM_LEDS 1
+CRGB leds[NUM_LEDS];
+static bool fastledInitialized = false;
 
 LedFeedback ledFeedback;
 
@@ -24,11 +27,16 @@ bool LedFeedback::begin(uint8_t pin, uint8_t brightness) {
     ledPin = pin;
     maxBrightness = brightness;
     
-    // ESP32-S3 DevKitC has WS2812 on GPIO48
-    pinMode(ledPin, OUTPUT);
+    // Initialize FastLED for WS2812 on GPIO48
+    if (!fastledInitialized) {
+        FastLED.addLeds<WS2812, 48, GRB>(leds, NUM_LEDS);
+        FastLED.setBrightness(maxBrightness);
+        fastledInitialized = true;
+    }
     
     // Turn off initially
-    ::rgbLedWrite(ledPin, 0, 0, 0);
+    leds[0] = CRGB::Black;
+    FastLED.show();
     
     initialized = true;
     Serial.printf("LED Feedback initialized on GPIO %d, brightness %d%%\n", ledPin, (brightness * 100) / 255);
@@ -60,7 +68,8 @@ void LedFeedback::setBrightness(uint8_t brightness) {
 
 void LedFeedback::off() {
     currentPattern = LedPattern::OFF;
-    ::rgbLedWrite(ledPin, 0, 0, 0);
+    leds[0] = CRGB::Black;
+    FastLED.show();
 }
 
 void LedFeedback::setPattern(LedPattern pattern, LedColor color, uint16_t speed) {
@@ -99,7 +108,8 @@ void LedFeedback::updatePattern() {
                 if (patternState) {
                     writeColor(currentColor.r, currentColor.g, currentColor.b);
                 } else {
-                    ::rgbLedWrite(ledPin, 0, 0, 0);
+                    leds[0] = CRGB::Black;
+                    FastLED.show();
                 }
             }
             break;
@@ -127,7 +137,8 @@ void LedFeedback::updatePattern() {
                 uint8_t r = (currentColor.r * scale) / 255;
                 uint8_t g = (currentColor.g * scale) / 255;
                 uint8_t b = (currentColor.b * scale) / 255;
-                ::rgbLedWrite(ledPin, r, g, b);
+                leds[0] = CRGB(r, g, b);
+                FastLED.show();
             }
             break;
         }
@@ -164,7 +175,8 @@ void LedFeedback::updatePattern() {
 
 void LedFeedback::writeColor(uint8_t r, uint8_t g, uint8_t b) {
     if (!ledEnabled) {
-        ::rgbLedWrite(ledPin, 0, 0, 0);
+        leds[0] = CRGB::Black;
+        FastLED.show();
         return;
     }
     
@@ -173,7 +185,8 @@ void LedFeedback::writeColor(uint8_t r, uint8_t g, uint8_t b) {
     g = (g * maxBrightness) / 255;
     b = (b * maxBrightness) / 255;
     
-    ::rgbLedWrite(ledPin, r, g, b);
+    leds[0] = CRGB(r, g, b);
+    FastLED.show();
 }
 
 // Preset feedback patterns
@@ -217,6 +230,7 @@ void LedFeedback::showIdle() {
 void LedFeedback::setEnabled(bool enabled) {
     ledEnabled = enabled;
     if (!enabled) {
-        ::rgbLedWrite(ledPin, 0, 0, 0);
+        leds[0] = CRGB::Black;
+        FastLED.show();
     }
 }
