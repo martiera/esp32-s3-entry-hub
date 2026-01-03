@@ -1,8 +1,24 @@
 #include "display_manager.h"
 #include "config.h"
 #include "pins.h"
+#include <Wire.h>
 
 DisplayManager display;
+
+// Static touch handler for FT6X36 callback
+static int16_t lastTouchX = -1;
+static int16_t lastTouchY = -1;
+static bool touchDetected = false;
+
+void touchHandler(TPoint point, TEvent e) {
+    if (e == TEvent::TouchStart || e == TEvent::TouchMove || e == TEvent::Tap) {
+        lastTouchX = point.x;
+        lastTouchY = point.y;
+        touchDetected = true;
+    } else if (e == TEvent::TouchEnd) {
+        touchDetected = false;
+    }
+}
 
 DisplayManager::DisplayManager() 
     : initialized(false),
@@ -10,11 +26,19 @@ DisplayManager::DisplayManager()
       currentBrightness(255),
       lastActivityTime(0),
       autoSleepEnabled(false),
-      sleepTimeout(60000) {
+      sleepTimeout(60000),
+      touch(&Wire, TOUCH_INT),
+      touchInitialized(false),
+      touchCallback(nullptr),
+      lastTouchEvent(TouchEvent::NONE),
+      touchActive(false),
+      touchStartX(0), touchStartY(0),
+      touchEndX(0), touchEndY(0),
+      touchStartTime(0) {
 }
 
 bool DisplayManager::begin() {
-    Serial.println("Initializing display...");
+    log_i("Initializing display...");
     
     // Initialize TFT
     tft.init();
@@ -33,10 +57,26 @@ bool DisplayManager::begin() {
     initialized = true;
     displayEnabled = true;
     
+    // Initialize I2C for touch
+    Wire.begin(TOUCH_SDA, TOUCH_SCL);
+    
+    // Configure interrupt pin
+    pinMode(TOUCH_INT, INPUT);
+    
+    // Initialize touch controller
+    log_i("Initializing touch controller on I2C SDA=%d SCL=%d INT=%d", TOUCH_SDA, TOUCH_SCL, TOUCH_INT);
+    if (touch.begin(FT6X36_DEFAULT_THRESHOLD)) {
+        touchInitialized = true;
+        touch.registerTouchHandler(touchHandler);
+        log_i("FT6X36 touch controller initialized successfully");
+    } else {
+        log_e("Touch controller NOT FOUND!");
+    }
+    
     // Show boot screen
     drawBootScreen();
     
-    Serial.println("✓ Display initialized (ILI9488 480x320)");
+    log_i("Display initialized (ILI9488 480x320)");
     return true;
 }
 
@@ -70,6 +110,12 @@ void DisplayManager::drawBootScreen() {
 void DisplayManager::loop() {
     if (!initialized || !displayEnabled) {
         return;
+    }
+    
+    // Process touch events (INT pin required for callback)
+    if (touchInitialized) {
+        touch.loop();
+        handleTouch();
     }
     
     // Handle auto-sleep
@@ -272,4 +318,122 @@ void DisplayManager::sleepDisplay() {
     
     analogWrite(TFT_BL, 0);
     displayEnabled = false;
+}
+
+// Touch methods
+void DisplayManager::handleTouch() {
+    if (!touchInitialized) return;
+    
+    if (touchDetected && lastTouchX >= 0 && lastTouchY >= 0) {
+        // Get raw touch coordinates from callback
+        int16_t rawX = lastTouchX;
+        int16_t rawY = lastTouchY;
+        
+        // FT6236 touch panel is 320x480 (portrait)
+        // Display is rotated to landscape 480x320
+        // Transform: rawY -> screenX, inverted rawX -> screenY
+        int16_t x = map(rawY, 0, 480, 0, 479);
+        int16_t y = map(320 - rawX, 0, 320, 0, 319);
+        
+        // Clamp to screen bounds
+        x = constrain(x, 0, 479);
+        y = constrain(y, 0, 319);
+        
+        if (!touchActive) {
+            // Touch just started
+            touchActive = true;
+            touchStartX = x;
+            touchStartY = y;
+            touchStartTime = millis();
+            log_i("Touch START at (%d,%d)", x, y);
+        }
+        
+        touchEndX = x;
+        touchEndY = y;
+        
+        // Update activity time
+        lastActivityTime = millis();
+        
+        // Visual feedback - draw touch point
+        tft.fillCircle(x, y, 5, TFT_RED);
+        
+    } else if (touchActive && !touchDetected) {
+        // Touch just ended - process gesture
+        touchActive = false;
+        processTouchGesture();
+    }
+}
+
+void DisplayManager::processTouchGesture() {
+    unsigned long touchDuration = millis() - touchStartTime;
+    int16_t deltaX = touchEndX - touchStartX;
+    int16_t deltaY = touchEndY - touchStartY;
+    
+    const int16_t SWIPE_THRESHOLD = 50;
+    const unsigned long LONG_PRESS_THRESHOLD = 500;
+    
+    // Determine gesture type
+    if (abs(deltaX) > SWIPE_THRESHOLD || abs(deltaY) > SWIPE_THRESHOLD) {
+        // Swipe detected
+        if (abs(deltaX) > abs(deltaY)) {
+            // Horizontal swipe
+            if (deltaX > 0) {
+                lastTouchEvent = TouchEvent::SWIPE_RIGHT;
+                Serial.printf("Touch: SWIPE RIGHT at (%d, %d)\n", touchEndX, touchEndY);
+            } else {
+                lastTouchEvent = TouchEvent::SWIPE_LEFT;
+                Serial.printf("Touch: SWIPE LEFT at (%d, %d)\n", touchEndX, touchEndY);
+            }
+        } else {
+            // Vertical swipe
+            if (deltaY > 0) {
+                lastTouchEvent = TouchEvent::SWIPE_DOWN;
+                Serial.printf("Touch: SWIPE DOWN at (%d, %d)\n", touchEndX, touchEndY);
+            } else {
+                lastTouchEvent = TouchEvent::SWIPE_UP;
+                Serial.printf("Touch: SWIPE UP at (%d, %d)\n", touchEndX, touchEndY);
+            }
+        }
+    } else if (touchDuration > LONG_PRESS_THRESHOLD) {
+        lastTouchEvent = TouchEvent::LONG_PRESS;
+        Serial.printf("Touch: LONG PRESS at (%d, %d) for %lu ms\n", touchEndX, touchEndY, touchDuration);
+    } else {
+        lastTouchEvent = TouchEvent::TAP;
+        Serial.printf("Touch: TAP at (%d, %d)\n", touchEndX, touchEndY);
+    }
+    
+    // Call callback if set
+    if (touchCallback) {
+        touchCallback(lastTouchEvent, touchEndX, touchEndY);
+    }
+}
+
+bool DisplayManager::isTouched() {
+    if (!touchInitialized) return false;
+    return touchDetected;
+}
+
+void DisplayManager::getTouchPoint(int16_t &x, int16_t &y) {
+    if (!touchInitialized || !touchDetected) {
+        x = -1;
+        y = -1;
+        return;
+    }
+    
+    x = lastTouchX;
+    y = lastTouchY;
+    
+    // Transform for landscape
+    int16_t tempX = x;
+    x = y;
+    y = 320 - tempX;
+    x = map(x, 0, 319, 0, 479);
+}
+
+void DisplayManager::setTouchCallback(TouchCallback callback) {
+    touchCallback = callback;
+}
+
+TouchEvent DisplayManager::getLastTouchEvent() {
+    return lastTouchEvent;
 }

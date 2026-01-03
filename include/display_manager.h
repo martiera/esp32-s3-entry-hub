@@ -3,6 +3,21 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <FT6X36.h>
+
+// Touch event types
+enum class TouchEvent {
+    NONE,
+    TAP,
+    LONG_PRESS,
+    SWIPE_LEFT,
+    SWIPE_RIGHT,
+    SWIPE_UP,
+    SWIPE_DOWN
+};
+
+// Touch callback function type
+typedef void (*TouchCallback)(TouchEvent event, int16_t x, int16_t y);
 
 class DisplayManager {
 public:
@@ -30,6 +45,12 @@ public:
     void updateTimeDisplay(const char* time);
     void updateWeather(int temp, const char* condition);
     
+    // Touch
+    bool isTouched();
+    void getTouchPoint(int16_t &x, int16_t &y);
+    void setTouchCallback(TouchCallback callback);
+    TouchEvent getLastTouchEvent();
+    
 private:
     bool initialized;
     bool displayEnabled;
@@ -39,6 +60,16 @@ private:
     uint32_t sleepTimeout;
     
     TFT_eSPI tft;
+    FT6X36 touch;
+    bool touchInitialized;
+    TouchCallback touchCallback;
+    TouchEvent lastTouchEvent;
+    
+    // Touch tracking
+    bool touchActive;
+    int16_t touchStartX, touchStartY;
+    int16_t touchEndX, touchEndY;
+    unsigned long touchStartTime;
     
     void initDisplay();
     void drawBootScreen();
@@ -47,6 +78,7 @@ private:
     void updateStatusBar();
     void wakeDisplay();
     void sleepDisplay();
+    void processTouchGesture();
 };
 
 extern DisplayManager display;
