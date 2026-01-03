@@ -28,10 +28,11 @@
 #include "mqtt_client.h"
 #include "ota_manager.h"
 #include "audio_handler.h"
-#include "porcupine_handler.h"
+#include "voice_activity_handler.h"
 #include "storage_manager.h"
 #include "web_server.h"
 #include "ha_integration.h"
+#include "ha_assist_client.h"
 #include "display_manager.h"
 #include "led_feedback.h"
 #include "notification_manager.h"
@@ -41,6 +42,11 @@ unsigned long lastStatusUpdate = 0;
 unsigned long lastVoiceCheck = 0;
 bool systemReady = false;
 
+// Voice command state
+bool isListeningForCommand = false;
+unsigned long listeningStartTime = 0;
+const unsigned long LISTENING_TIMEOUT_MS = 1200; // 1.2 seconds to speak command
+
 // Forward declarations
 void setupSystem();
 void testIntegrationsOnStartup(JsonDocument& config);
@@ -48,6 +54,7 @@ void handleVoiceRecognition();
 void handleMqttMessages(const char* topic, const char* payload);
 void publishSystemStatus();
 void processVoiceCommand(const char* command);
+void onAssistResult(const char* transcription, const char* response, const char* error);
 
 void setup() {
     // Initialize serial communication
@@ -83,7 +90,7 @@ void loop() {
     
     // Audio processing
     audioHandler.loop();
-    porcupineHandler.loop();
+    voiceActivity.loop();
     
     // Voice recognition
     if (systemReady) {
@@ -178,18 +185,26 @@ void setupSystem() {
         Serial.println("✗ WARNING: Audio initialization failed");
     }
     
-    // 7. Wake Word Detection
-    Serial.print("→ Porcupine wake word... ");
-    if (porcupineHandler.begin()) {
+    // 7. Voice Activity Detection
+    Serial.print("→ Voice activity detection... ");
+    if (voiceActivity.begin()) {
         Serial.println("✓");
     } else {
-        Serial.println("⚠️  Template mode (add Porcupine library)");
+        Serial.println("✗ Failed");
     }
     
     // 8. Home Assistant
     Serial.print("→ Home Assistant integration... ");
     homeAssistant.begin();
     Serial.println("✓");
+    
+    // 8.5. HA Assist Client (voice-to-text pipeline)
+    Serial.print("→ HA Assist client... ");
+    haAssist.begin(HA_BASE_URL, HA_TOKEN);
+    haAssist.setResultCallback(onAssistResult);
+    haAssist.setLanguage("en");
+    Serial.println("✓");
+    Serial.printf("   Assist endpoint: %s\n", HA_BASE_URL);
     
     // 9. Display
     Serial.print("→ Display manager... ");
@@ -264,10 +279,47 @@ void setupSystem() {
     publishSystemStatus();
 }
 
+// Callback for HA Assist results
+void onAssistResult(const char* transcription, const char* response, const char* error) {
+    isListeningForCommand = false;
+    ledFeedback.showIdle();
+    
+    if (error) {
+        Serial.printf("❌ Assist error: %s\n", error);
+        display.showNotification("Error", error);
+        return;
+    }
+    
+    if (!transcription || strlen(transcription) == 0) {
+        Serial.println("⚠️  No transcription received");
+        display.showNotification("Error", "No speech detected");
+        return;
+    }
+    
+    Serial.println("\n═══════════════════════════════════");
+    Serial.println("🗣️  SPEECH RECOGNIZED");
+    Serial.printf("You said: \"%s\"\n", transcription);
+    Serial.println("═══════════════════════════════════\n");
+    
+    // Update HA sensors
+    homeAssistant.updateVoiceCommandSensor(transcription);
+    
+    // Process command locally on ESP32
+    processVoiceCommand(transcription);
+    
+    // Show on display
+    display.showNotification("Voice Command", transcription);
+}
+
 void handleVoiceRecognition() {
     // Check for audio input at regular intervals
     unsigned long now = millis();
-    if (now - lastVoiceCheck < 50) { // Check every 50ms
+    
+    // During recording, check more frequently (every 10ms) to capture all audio
+    // Otherwise check every 50ms for voice activity detection
+    unsigned long checkInterval = isListeningForCommand ? 10 : 50;
+    
+    if (now - lastVoiceCheck < checkInterval) {
         return;
     }
     lastVoiceCheck = now;
@@ -276,48 +328,97 @@ void handleVoiceRecognition() {
     int16_t audioBuffer[512];
     size_t samplesRead = audioHandler.readAudio(audioBuffer, 512);
     
-    if (samplesRead > 0) {
-        // Process with Porcupine for wake word detection
-        if (porcupineHandler.processAudioFrame(audioBuffer, samplesRead)) {
-            // Wake word detected!
-            const char* wakeWord = porcupineHandler.getDetectedKeyword();
-            
-            Serial.println("\n═══════════════════════════════════");
-            Serial.printf("🎤 WAKE WORD DETECTED: %s\n", wakeWord);
-            Serial.println("═══════════════════════════════════\n");
-            
-            // Notify systems
-            mqttClient.publishVoiceDetection(wakeWord);
-            homeAssistant.updateVoiceCommandSensor(wakeWord);
-            webServer.broadcastMessage("voice_detected", wakeWord);
-            display.showWakeWordDetected();
-            
-            // TODO: Now listen for command using TensorFlow Lite Micro
-            // This would involve:
-            // 1. Recording audio for command duration
-            // 2. Processing with TFLM model
-            // 3. Executing recognized command
-            
-            Serial.println("Listening for command...");
-            delay(3000); // Simulate listening period
-            
-            // Example command processing (replace with actual TFLM)
-            const char* demoCommand = "turn on the lights";
-            processVoiceCommand(demoCommand);
+    if (samplesRead == 0) {
+        return;
+    }
+    
+    // If we're listening for a command, feed audio to HA Assist
+    if (isListeningForCommand) {
+        haAssist.feedAudio(audioBuffer, samplesRead);
+        
+        unsigned long elapsed = now - listeningStartTime;
+        
+        // Check for timeout or silence (end of speech)
+        if (elapsed >= LISTENING_TIMEOUT_MS) {
+            Serial.printf("⏱️  Listening timeout reached at %lums (target: %lums), processing...\n", 
+                         elapsed, LISTENING_TIMEOUT_MS);
+            ledFeedback.showProcessing();
+            display.showNotification("Voice", "Processing...");
+            haAssist.stopAndProcess();
+            isListeningForCommand = false;
         }
+        return;
+    }
+    
+    // Process for voice activity detection (wake trigger)
+    if (voiceActivity.processAudioFrame(audioBuffer, samplesRead)) {
+        // Voice activity detected - start listening!
+        
+        Serial.println("\n═══════════════════════════════════");
+        Serial.println("🎤 VOICE ACTIVITY DETECTED!");
+        Serial.printf("Audio level: %ld\n", voiceActivity.getLastAudioLevel());
+        Serial.println("Waiting for command...");
+        Serial.println("═══════════════════════════════════\n");
+        
+        // Notify systems
+        mqttClient.publishVoiceDetection("voice_activity");
+        webServer.broadcastMessage("voice_detected", "listening");
+        display.showWakeWordDetected();
+        ledFeedback.showListening();
+        
+        // Small delay to let person take a breath before speaking command
+        delay(250);
+        
+        Serial.println("Now listening for command...");
+        
+        // Start recording for HA Assist
+        isListeningForCommand = true;
+        listeningStartTime = millis();  // Use current time after delay
+        haAssist.startRecording();
+        
+        // Don't feed the wake audio - start fresh after the delay
     }
 }
 
-void processVoiceCommand(const char* command) {
-    Serial.printf("Processing command: %s\n", command);
+// Normalize command text to handle common speech recognition errors
+String normalizeCommand(const char* rawCommand) {
+    String cmd = String(rawCommand);
+    cmd.toLowerCase();
+    cmd.trim();
     
-    // Update sensors
+    // Common mishearings for "gate"
+    cmd.replace("open date", "open gate");
+    cmd.replace("open this", "open gate");
+    cmd.replace("open gate", "open gate");
+    cmd.replace("open the gate", "open gate");
+    cmd.replace("opened", "open gate");
+    cmd.replace("opengate", "open gate");
+    
+    // Common mishearings for "garage"
+    cmd.replace("garage door", "garage");
+    cmd.replace("the garage", "garage");
+    
+    // Clean up extra spaces
+    while (cmd.indexOf("  ") >= 0) {
+        cmd.replace("  ", " ");
+    }
+    
+    return cmd;
+}
+
+void processVoiceCommand(const char* command) {
+    Serial.printf("Raw command: %s\n", command);
+    
+    // Normalize the command first
+    String normalized = normalizeCommand(command);
+    Serial.printf("Normalized: %s\n", normalized.c_str());
+    
+    // Update sensors with original command
     homeAssistant.updateVoiceCommandSensor(command);
     mqttClient.publishCommandExecuted(command, "success");
     
-    // Parse and execute command
-    String cmd = String(command);
-    cmd.toLowerCase();
+    // Parse and execute normalized command
+    String cmd = normalized;
     
     if (cmd.indexOf("light") >= 0) {
         if (cmd.indexOf("on") >= 0) {
@@ -328,6 +429,18 @@ void processVoiceCommand(const char* command) {
             homeAssistant.controlLight("living_room", false);
         }
     }
+    else if (cmd.indexOf("gate") >= 0 || cmd.indexOf("garage") >= 0) {
+        if (cmd.indexOf("open") >= 0) {
+            Serial.println("→ Opening gate/garage");
+            homeAssistant.controlCover("garage_door", "open");
+        } else if (cmd.indexOf("close") >= 0) {
+            Serial.println("→ Closing gate/garage");
+            homeAssistant.controlCover("garage_door", "close");
+        } else {
+            Serial.println("→ Toggling gate/garage");
+            homeAssistant.controlCover("garage_door", "toggle");
+        }
+    }
     else if (cmd.indexOf("lock") >= 0 || cmd.indexOf("door") >= 0) {
         if (cmd.indexOf("lock") >= 0) {
             Serial.println("→ Locking door");
@@ -336,10 +449,6 @@ void processVoiceCommand(const char* command) {
             Serial.println("→ Unlocking door");
             homeAssistant.controlLock("front_door", false);
         }
-    }
-    else if (cmd.indexOf("garage") >= 0) {
-        Serial.println("→ Operating garage door");
-        homeAssistant.controlCover("garage_door", "toggle");
     }
     else if (cmd.indexOf("good night") >= 0) {
         Serial.println("→ Activating Good Night scene");

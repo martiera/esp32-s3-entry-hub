@@ -3,7 +3,7 @@
 #include "storage_manager.h"
 #include "mqtt_client.h"
 #include "audio_handler.h"
-#include "porcupine_handler.h"
+#include "voice_activity_handler.h"
 #include "notification_manager.h"
 #include <WiFi.h>
 #include <LittleFS.h>
@@ -187,8 +187,10 @@ void WebServerManager::handleGetStatus(AsyncWebServerRequest *request) {
     doc["audio"]["recording"] = audioHandler.isRecording();
     doc["audio"]["buffer_size"] = audioHandler.getBufferSize();
     
-    doc["voice"]["wake_word"] = porcupineHandler.getDetectedKeyword();
-    doc["voice"]["active"] = porcupineHandler.isWakeWordDetected();
+    doc["voice"]["mode"] = voiceActivity.getWakeMode() == WAKE_MODE_THRESHOLD ? "threshold" : "manual";
+    doc["voice"]["active"] = voiceActivity.isVoiceDetected();
+    doc["voice"]["audio_level"] = voiceActivity.getLastAudioLevel();
+    doc["voice"]["threshold"] = voiceActivity.getThreshold();
     
     doc["storage"]["total"] = storage.getTotalSpace();
     doc["storage"]["used"] = storage.getUsedSpace();
