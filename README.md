@@ -48,22 +48,24 @@ A sophisticated, voice-controlled smart home entry panel with web-based administ
 ## Pin Configuration
 
 ### I2S INMP441 Microphone
-- SCK (Serial Clock): GPIO 4
-- WS (Word Select): GPIO 5
-- SD (Serial Data): GPIO 6
+- SCK (Serial Clock): GPIO 14
+- WS (Word Select): GPIO 15
+- SD (Serial Data): GPIO 16
 
-### SPI Display (for future LVGL)
-- MOSI: GPIO 11
-- MISO: GPIO 13
-- SCK: GPIO 12
-- CS: GPIO 10
-- DC: GPIO 9
-- RST: GPIO 8
-- Backlight: GPIO 7
+### SPI Display (3.5" ILI9488 IPS)
+/- MOSI/SDI: GPIO 11
+- MISO/SDO: GPIO 13 (optional, usually not connected for display)
+/- SCK/SCLK: GPIO 12
+/- CS: GPIO 10
+/- DC: GPIO 8
+/- RST: GPIO 9
+/- Backlight: GPIO 46
 
-### Touch Controller (I2C)
-- SDA: GPIO 17
-- SCL: GPIO 18
+### Touch Controller (FT6236 - I2C)
+- SDA: GPIO 38
+- SCL: GPIO 39
+- INT: GPIO 40 (optional)
+- RST: GPIO 41 (optional)
 
 ## Setup Instructions
 

@@ -1,7 +1,7 @@
 #include "led_feedback.h"
 #include "pins.h"
 
-// ESP32-S3 built-in neopixelWrite function for WS2812
+// ESP32-S3 built-in rgbLedWrite function for WS2812
 // This is provided by the Arduino ESP32 core
 
 LedFeedback ledFeedback;
@@ -28,7 +28,7 @@ bool LedFeedback::begin(uint8_t pin, uint8_t brightness) {
     pinMode(ledPin, OUTPUT);
     
     // Turn off initially
-    ::neopixelWrite(ledPin, 0, 0, 0);
+    ::rgbLedWrite(ledPin, 0, 0, 0);
     
     initialized = true;
     Serial.printf("LED Feedback initialized on GPIO %d, brightness %d%%\n", ledPin, (brightness * 100) / 255);
@@ -60,7 +60,7 @@ void LedFeedback::setBrightness(uint8_t brightness) {
 
 void LedFeedback::off() {
     currentPattern = LedPattern::OFF;
-    ::neopixelWrite(ledPin, 0, 0, 0);
+    ::rgbLedWrite(ledPin, 0, 0, 0);
 }
 
 void LedFeedback::setPattern(LedPattern pattern, LedColor color, uint16_t speed) {
@@ -99,7 +99,7 @@ void LedFeedback::updatePattern() {
                 if (patternState) {
                     writeColor(currentColor.r, currentColor.g, currentColor.b);
                 } else {
-                    ::neopixelWrite(ledPin, 0, 0, 0);
+                    ::rgbLedWrite(ledPin, 0, 0, 0);
                 }
             }
             break;
@@ -127,7 +127,7 @@ void LedFeedback::updatePattern() {
                 uint8_t r = (currentColor.r * scale) / 255;
                 uint8_t g = (currentColor.g * scale) / 255;
                 uint8_t b = (currentColor.b * scale) / 255;
-                ::neopixelWrite(ledPin, r, g, b);
+                ::rgbLedWrite(ledPin, r, g, b);
             }
             break;
         }
@@ -164,7 +164,7 @@ void LedFeedback::updatePattern() {
 
 void LedFeedback::writeColor(uint8_t r, uint8_t g, uint8_t b) {
     if (!ledEnabled) {
-        ::neopixelWrite(ledPin, 0, 0, 0);
+        ::rgbLedWrite(ledPin, 0, 0, 0);
         return;
     }
     
@@ -173,7 +173,7 @@ void LedFeedback::writeColor(uint8_t r, uint8_t g, uint8_t b) {
     g = (g * maxBrightness) / 255;
     b = (b * maxBrightness) / 255;
     
-    ::neopixelWrite(ledPin, r, g, b);
+    ::rgbLedWrite(ledPin, r, g, b);
 }
 
 // Preset feedback patterns
@@ -217,6 +217,6 @@ void LedFeedback::showIdle() {
 void LedFeedback::setEnabled(bool enabled) {
     ledEnabled = enabled;
     if (!enabled) {
-        ::neopixelWrite(ledPin, 0, 0, 0);
+        ::rgbLedWrite(ledPin, 0, 0, 0);
     }
 }

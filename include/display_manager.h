@@ -2,10 +2,7 @@
 #define DISPLAY_MANAGER_H
 
 #include <Arduino.h>
-
-// Forward declarations for LVGL (to be implemented when display is added)
-// #include <lvgl.h>
-// #include <TFT_eSPI.h>
+#include <TFT_eSPI.h>
 
 class DisplayManager {
 public:
@@ -41,11 +38,11 @@ private:
     bool autoSleepEnabled;
     uint32_t sleepTimeout;
     
-    // LVGL objects (to be implemented)
-    // lv_obj_t* mainScreen;
-    // lv_obj_t* statusBar;
+    TFT_eSPI tft;
     
-    void initializeLVGL();
+    void initDisplay();
+    void drawBootScreen();
+    void drawStatusScreen();
     void handleTouch();
     void updateStatusBar();
     void wakeDisplay();

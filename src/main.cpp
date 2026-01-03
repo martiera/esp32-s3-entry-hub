@@ -189,10 +189,10 @@ void setupSystem() {
     homeAssistant.begin();
     Serial.println("✓");
     
-    // 9. Display (placeholder for future)
+    // 9. Display
     Serial.print("→ Display manager... ");
     display.begin();
-    Serial.println("✓ (Add display hardware to enable)");
+    Serial.println("✓");
     
     // 10. Notification Manager
     Serial.print("→ Notification manager... ");
@@ -247,6 +247,15 @@ void setupSystem() {
     Serial.print("\n→ Testing integrations... ");
     testIntegrationsOnStartup(config);
     Serial.println("✓");
+    
+    // Show dashboard on display
+    delay(1000);
+    display.showDashboard();
+    
+    // Update display with WiFi status
+    if (wifiMgr.isConnected()) {
+        display.updateWiFiStatus(true, wifiMgr.getRSSI());
+    }
     
     // Publish initial status
     delay(2000);
