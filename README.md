@@ -53,13 +53,13 @@ A sophisticated, voice-controlled smart home entry panel with web-based administ
 - SD (Serial Data): GPIO 16
 
 ### SPI Display (3.5" ILI9488 IPS)
-/- MOSI/SDI: GPIO 11
+- MOSI/SDI: GPIO 11
 - MISO/SDO: GPIO 13 (optional, usually not connected for display)
-/- SCK/SCLK: GPIO 12
-/- CS: GPIO 10
-/- DC: GPIO 8
-/- RST: GPIO 9
-/- Backlight: GPIO 46
+- SCK/SCLK: GPIO 12
+- CS: GPIO 10
+- DC: GPIO 8
+- RST: GPIO 9
+- Backlight: GPIO 46
 
 ### Touch Controller (FT6236 - I2C)
 - SDA: GPIO 38

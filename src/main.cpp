@@ -171,6 +171,8 @@ void setupSystem() {
     Serial.print("→ I2S audio input... ");
     if (audioHandler.begin()) {
         Serial.println("✓");
+        // Quick microphone test
+        audioHandler.testMicrophone();
         audioHandler.startRecording();
     } else {
         Serial.println("✗ WARNING: Audio initialization failed");

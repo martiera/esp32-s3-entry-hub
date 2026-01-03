@@ -14,6 +14,8 @@ public:
     bool isRecording();
     void startRecording();
     void stopRecording();
+    bool testMicrophone();
+    void monitorAudioLevels(int durationSeconds = 10);
     
     int16_t* getAudioBuffer();
     size_t getBufferSize();
