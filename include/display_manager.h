@@ -43,7 +43,11 @@ public:
     // Status updates
     void updateWiFiStatus(bool connected, int rssi);
     void updateTimeDisplay(const char* time);
-    void updateWeather(int temp, const char* condition);
+    void updateWeather(float temp, int humidity, const char* condition, const char* icon);
+    
+    // Voice button
+    void triggerVoiceCommand();
+    bool isVoiceButtonPressed(int16_t x, int16_t y);
     
     // Touch
     bool isTouched();
@@ -71,6 +75,20 @@ private:
     int16_t touchEndX, touchEndY;
     unsigned long touchStartTime;
     
+    // Weather data
+    float currentTemp;
+    int currentHumidity;
+    String weatherCondition;
+    String weatherIcon;
+    unsigned long lastWeatherUpdate;
+    
+    // Voice button
+    static const int VOICE_BTN_X = 350;
+    static const int VOICE_BTN_Y = 200;
+    static const int VOICE_BTN_W = 110;
+    static const int VOICE_BTN_H = 100;
+    bool voiceButtonActive;
+    
     void initDisplay();
     void drawBootScreen();
     void drawStatusScreen();
@@ -78,6 +96,9 @@ private:
     void updateStatusBar();
     void wakeDisplay();
     void sleepDisplay();
+    void drawWeatherWidget();
+    void drawVoiceButton(bool pressed);
+    void drawTimeWidget();
     void processTouchGesture();
 };
 

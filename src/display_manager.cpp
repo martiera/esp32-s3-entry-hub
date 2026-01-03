@@ -34,7 +34,13 @@ DisplayManager::DisplayManager()
       touchActive(false),
       touchStartX(0), touchStartY(0),
       touchEndX(0), touchEndY(0),
-      touchStartTime(0) {
+      touchStartTime(0),
+      currentTemp(0),
+      currentHumidity(0),
+      weatherCondition("--"),
+      weatherIcon(""),
+      lastWeatherUpdate(0),
+      voiceButtonActive(false) {
 }
 
 bool DisplayManager::begin() {
@@ -143,36 +149,28 @@ void DisplayManager::drawStatusScreen() {
     tft.setCursor(10, 12);
     tft.println("ESP32-S3 Entry Hub");
     
-    // System info section
+    // Draw enhanced UI widgets
+    drawWeatherWidget();
+    drawTimeWidget();
+    drawVoiceButton(false);
+    
+    // System status section (below widgets)
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.setTextSize(2);
-    tft.setCursor(10, 60);
-    tft.println("System Status");
-    
     tft.setTextSize(1);
+    tft.setCursor(10, 160);
+    tft.println("System Status:");
+    
     tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setCursor(10, 90);
-    tft.print("IP: ");
-    tft.println("Loading...");
+    tft.setCursor(10, 175);
+    tft.print("WiFi: Connected");
     
-    tft.setCursor(10, 110);
-    tft.print("WiFi: ");
-    tft.println("Connecting...");
+    tft.setCursor(10, 190);
+    tft.print("MQTT: Ready");
     
-    tft.setCursor(10, 130);
-    tft.print("MQTT: ");
-    tft.println("Checking...");
-    
-    // Instructions
-    tft.setTextColor(TFT_YELLOW, TFT_BLACK);
-    tft.setCursor(10, 180);
-    tft.println("Display initialized successfully!");
-    
-    tft.setTextColor(TFT_GREEN, TFT_BLACK);
-    tft.setCursor(10, 200);
-    tft.println("Access web panel:");
-    tft.setCursor(10, 215);
-    tft.println("http://entryhub.local");
+    // Instructions at bottom
+    tft.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    tft.setCursor(10, 280);
+    tft.println("Touch voice button or say wake word");
 }
 
 void DisplayManager::showVoiceRecognition() {
@@ -278,18 +276,7 @@ void DisplayManager::updateTimeDisplay(const char* time) {
     tft.println(time);
 }
 
-void DisplayManager::updateWeather(int temp, const char* condition) {
-    if (!initialized) return;
-    
-    tft.setTextColor(TFT_CYAN, TFT_BLACK);
-    tft.setTextSize(1);
-    tft.setCursor(10, 150);
-    tft.print("Weather: ");
-    tft.print(temp);
-    tft.print("C ");
-    tft.print(condition);
-    tft.println("          ");
-}
+
 
 void DisplayManager::setBrightness(uint8_t brightness) {
     currentBrightness = brightness;
@@ -346,6 +333,17 @@ void DisplayManager::handleTouch() {
             touchStartY = y;
             touchStartTime = millis();
             log_i("Touch START at (%d,%d)", x, y);
+            
+            // Check if voice button was pressed
+            if (isVoiceButtonPressed(x, y)) {
+                log_i("Voice button pressed!");
+                triggerVoiceCommand();
+                
+                // Invoke touch callback if set
+                if (touchCallback) {
+                    touchCallback(TouchEvent::TAP, x, y);
+                }
+            }
         }
         
         touchEndX = x;
@@ -436,4 +434,103 @@ void DisplayManager::setTouchCallback(TouchCallback callback) {
 
 TouchEvent DisplayManager::getLastTouchEvent() {
     return lastTouchEvent;
+}
+
+// Weather widget drawing
+void DisplayManager::drawWeatherWidget() {
+    // Weather widget positioned in upper-left area
+    int wx = 10, wy = 50, ww = 150, wh = 100;
+    
+    // Draw rounded background
+    tft.fillRoundRect(wx, wy, ww, wh, 10, TFT_DARKGREY);
+    tft.drawRoundRect(wx, wy, ww, wh, 10, TFT_LIGHTGREY);
+    
+    // Display temperature
+    tft.setTextColor(TFT_YELLOW, TFT_DARKGREY);
+    tft.setTextSize(3);
+    tft.setCursor(wx + 15, wy + 15);
+    tft.printf("%.1f", currentTemp);
+    tft.setTextSize(2);
+    tft.print("C");
+    
+    // Display humidity
+    tft.setTextColor(TFT_CYAN, TFT_DARKGREY);
+    tft.setTextSize(2);
+    tft.setCursor(wx + 15, wy + 50);
+    tft.printf("%d%%", currentHumidity);
+    
+    // Display weather condition
+    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.setTextSize(1);
+    tft.setCursor(wx + 10, wy + 75);
+    tft.print(weatherCondition.substring(0, 14).c_str()); // Truncate to fit
+}
+
+// Voice button drawing
+void DisplayManager::drawVoiceButton(bool pressed) {
+    uint16_t bgColor = pressed ? TFT_GREEN : TFT_BLUE;
+    uint16_t borderColor = pressed ? TFT_WHITE : TFT_LIGHTGREY;
+    
+    // Draw rounded button
+    tft.fillRoundRect(VOICE_BTN_X, VOICE_BTN_Y, VOICE_BTN_W, VOICE_BTN_H, 15, bgColor);
+    tft.drawRoundRect(VOICE_BTN_X, VOICE_BTN_Y, VOICE_BTN_W, VOICE_BTN_H, 15, borderColor);
+    
+    // Draw microphone icon (simple representation)
+    int cx = VOICE_BTN_X + VOICE_BTN_W/2;
+    int cy = VOICE_BTN_Y + VOICE_BTN_H/2 - 10;
+    
+    // Mic body
+    tft.fillRoundRect(cx - 15, cy - 20, 30, 40, 8, TFT_WHITE);
+    // Mic stand
+    tft.fillRect(cx - 2, cy + 20, 4, 15, TFT_WHITE);
+    // Mic base
+    tft.fillRect(cx - 10, cy + 35, 20, 3, TFT_WHITE);
+    
+    // Label
+    tft.setTextColor(TFT_WHITE, bgColor);
+    tft.setTextSize(2);
+    tft.setCursor(VOICE_BTN_X + 20, VOICE_BTN_Y + VOICE_BTN_H - 25);
+    tft.print("VOICE");
+}
+
+// Time widget drawing
+void DisplayManager::drawTimeWidget() {
+    // Time widget in upper-center area
+    int tx = 170, ty = 50, tw = 140, th = 50;
+    
+    // Draw background
+    tft.fillRoundRect(tx, ty, tw, th, 10, TFT_DARKGREY);
+    tft.drawRoundRect(tx, ty, tw, th, 10, TFT_LIGHTGREY);
+    
+    // Display time (placeholder - needs RTC or NTP)
+    tft.setTextColor(TFT_WHITE, TFT_DARKGREY);
+    tft.setTextSize(3);
+    tft.setCursor(tx + 10, ty + 15);
+    tft.print("--:--");
+}
+
+// Update weather data
+void DisplayManager::updateWeather(float temp, int humidity, const char* condition, const char* icon) {
+    currentTemp = temp;
+    currentHumidity = humidity;
+    weatherCondition = String(condition);
+    weatherIcon = String(icon);
+    lastWeatherUpdate = millis();
+    
+    drawWeatherWidget();
+}
+
+// Check if voice button is pressed
+bool DisplayManager::isVoiceButtonPressed(int16_t x, int16_t y) {
+    return (x >= VOICE_BTN_X && x <= VOICE_BTN_X + VOICE_BTN_W &&
+            y >= VOICE_BTN_Y && y <= VOICE_BTN_Y + VOICE_BTN_H);
+}
+
+// Trigger voice command manually
+void DisplayManager::triggerVoiceCommand() {
+    voiceButtonActive = true;
+    drawVoiceButton(true);
+    delay(100); // Visual feedback
+    voiceButtonActive = false;
+    drawVoiceButton(false);
 }

@@ -40,6 +40,7 @@
 // System state
 unsigned long lastStatusUpdate = 0;
 unsigned long lastVoiceCheck = 0;
+unsigned long lastWeatherUpdate = 0;
 bool systemReady = false;
 
 // Voice command state
@@ -55,6 +56,26 @@ void handleMqttMessages(const char* topic, const char* payload);
 void publishSystemStatus();
 void processVoiceCommand(const char* command);
 void onAssistResult(const char* transcription, const char* response, const char* error);
+void handleTouchButton(TouchEvent event, int16_t x, int16_t y);
+void updateWeatherDisplay();
+
+// Touch button callback
+void handleTouchButton(TouchEvent event, int16_t x, int16_t y) {
+    if (event == TouchEvent::TAP) {
+        log_i("Touch event at (%d,%d)", x, y);
+        
+        // Start listening for voice command
+        if (!isListeningForCommand && systemReady) {
+            log_i("Manual voice command triggered");
+            display.showNotification("Voice", "Speak now...");
+            
+            isListeningForCommand = true;
+            listeningStartTime = millis();
+            haAssist.startRecording();
+            ledFeedback.showListening();
+        }
+    }
+}
 
 void setup() {
     // Initialize serial communication
@@ -102,6 +123,12 @@ void loop() {
     if (now - lastStatusUpdate >= 30000) { // Every 30 seconds
         lastStatusUpdate = now;
         publishSystemStatus();
+    }
+    
+    // Periodic weather updates
+    if (now - lastWeatherUpdate >= 300000) { // Every 5 minutes
+        lastWeatherUpdate = now;
+        updateWeatherDisplay();
     }
     
     // Small delay to prevent watchdog issues
@@ -209,6 +236,7 @@ void setupSystem() {
     // 9. Display
     Serial.print("→ Display manager... ");
     display.begin();
+    display.setTouchCallback(handleTouchButton);
     Serial.println("✓");
     
     // 10. Notification Manager
@@ -604,3 +632,20 @@ void testIntegrationsOnStartup(JsonDocument& config) {
     // Save updated config with status
     storage.saveConfig(config);
 }
+
+void updateWeatherDisplay() {
+    // TODO: Implement weather fetching from HA or OpenWeather API
+    // For now, use placeholder data - will be updated via MQTT or API later
+    static bool initialized = false;
+    
+    if (!initialized) {
+        // Show initial placeholder data
+        display.updateWeather(22.5, 65, "Clear", "");
+        initialized = true;
+        log_i("Weather widget initialized with placeholder data");
+    }
+    
+    // Future: Subscribe to HA weather entity state changes via MQTT
+    // or periodically fetch from OpenWeatherMap API
+}
+
