@@ -3,6 +3,9 @@
 #include <Wire.h>
 #include <Ticker.h>
 
+// Custom font with Latin Extended support
+#include "montserrat_extended.h"
+
 // External background image
 extern const lv_img_dsc_t bg_image;
 
@@ -157,6 +160,9 @@ void LVGL_UI::updateTime() {
 void LVGL_UI::createMainScreen() {
     screens[SCREEN_MAIN] = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screens[SCREEN_MAIN], lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_width(screens[SCREEN_MAIN], 0, 0);
+    lv_obj_set_style_outline_width(screens[SCREEN_MAIN], 0, 0);
+    lv_obj_set_style_pad_all(screens[SCREEN_MAIN], 0, 0);
     
     // Add swipe gesture
     lv_obj_add_event_cb(screens[SCREEN_MAIN], screen_gesture_cb, LV_EVENT_GESTURE, NULL);
@@ -166,6 +172,10 @@ void LVGL_UI::createMainScreen() {
     bgImage = lv_img_create(screens[SCREEN_MAIN]);
     lv_img_set_src(bgImage, &bg_image);
     lv_obj_set_pos(bgImage, 0, 0);
+    lv_obj_set_style_border_width(bgImage, 0, 0);
+    lv_obj_set_style_outline_width(bgImage, 0, 0);
+    lv_obj_set_style_pad_all(bgImage, 0, 0);
+    lv_obj_set_style_img_recolor_opa(bgImage, LV_OPA_TRANSP, 0);
     
     // ========== GATE (Top Left: 96x80) ==========
     gateContainer = lv_obj_create(screens[SCREEN_MAIN]);
@@ -214,19 +224,20 @@ void LVGL_UI::createMainScreen() {
     lv_obj_set_style_pad_all(weatherContainer, 15, 0);
     lv_obj_clear_flag(weatherContainer, LV_OBJ_FLAG_SCROLLABLE);
     
-    // Weather icon (image widget for actual icon)
+    // Weather icon (image widget for actual icon) - larger size
     weatherIcon = lv_img_create(weatherContainer);
     lv_img_set_src(weatherIcon, &clear_day);  // Default to sunny
-    lv_obj_set_pos(weatherIcon, 10, 10);
+    lv_img_set_zoom(weatherIcon, 384);  // 1.5x scale (256 = 1.0x, 384 = 1.5x)
+    lv_obj_set_pos(weatherIcon, 10, 5);
     lv_obj_clear_flag(weatherIcon, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(weatherIcon, LV_OBJ_FLAG_HIDDEN);  // Hide until data loaded
     
-    // Temperature label (very large, positioned lower)
+    // Temperature label (very large, positioned lower with bigger font)
     tempLabel = lv_label_create(weatherContainer);
     lv_label_set_text(tempLabel, "--°");
-    lv_obj_set_style_text_font(tempLabel, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(tempLabel, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(tempLabel, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_pos(tempLabel, 85, 60);
+    lv_obj_set_pos(tempLabel, 90, 90);
     
     // Condition label
     conditionLabel = lv_label_create(weatherContainer);
@@ -235,17 +246,17 @@ void LVGL_UI::createMainScreen() {
     lv_obj_set_style_text_color(conditionLabel, lv_color_hex(0xB0B0B0), 0);
     lv_obj_align(conditionLabel, LV_ALIGN_BOTTOM_MID, 0, -10);
     
-    // ========== USER 1-4 (Bottom rows: 192x50 each, aligned to bottom) ==========
+    // ========== USER 1-4 (Bottom rows: 186x48 each with gaps, aligned to bottom) ==========
     for (int i = 0; i < MAX_PEOPLE; i++) {
         int col = i % 2;
         int row = i / 2;
-        lv_coord_t x = col * 192;
-        lv_coord_t y = 220 + row * 50;  // y=220 and y=270, aligned to bottom
+        lv_coord_t x = col * 192 + (col == 0 ? 0 : 4);  // Add 4px gap between columns
+        lv_coord_t y = 220 + row * 50 + (row == 0 ? 0 : 2);  // Add 2px gap between rows
         
         personCards[i] = lv_obj_create(screens[SCREEN_MAIN]);
-        lv_obj_set_size(personCards[i], 192, 50);
+        lv_obj_set_size(personCards[i], 186, 48);  // Reduced size for gaps (width: 188 -> 186)
         lv_obj_set_pos(personCards[i], x, y);
-        lv_obj_set_style_bg_opa(personCards[i], LV_OPA_80, 0);
+        lv_obj_set_style_bg_opa(personCards[i], LV_OPA_50, 0);  // 50% transparent
         lv_obj_set_style_bg_color(personCards[i], lv_color_hex(0x2a2a3e), 0);
         lv_obj_set_style_radius(personCards[i], 12, 0);
         lv_obj_set_style_border_width(personCards[i], 0, 0);
@@ -253,15 +264,15 @@ void LVGL_UI::createMainScreen() {
         
         personLabels[i] = lv_label_create(personCards[i]);
         lv_label_set_text(personLabels[i], "---");
-        lv_obj_set_style_text_font(personLabels[i], &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_font(personLabels[i], &montserrat_extended_20, 0);
         lv_obj_set_style_text_color(personLabels[i], lv_color_hex(0x808080), 0);
         lv_obj_center(personLabels[i]);
     }
     
-    // ========== VOICE BUTTON (Right bottom: 96x96) ==========
+    // ========== VOICE BUTTON (Right bottom: 92x96 with 4px left gap) ==========
     voiceButton = lv_btn_create(screens[SCREEN_MAIN]);
-    lv_obj_set_size(voiceButton, 96, 96);
-    lv_obj_set_pos(voiceButton, 384, 224);
+    lv_obj_set_size(voiceButton, 92, 96);
+    lv_obj_set_pos(voiceButton, 388, 224);  // Add 4px left gap (384 -> 388)
     lv_obj_set_style_bg_color(voiceButton, lv_color_hex(0x3b82f6), 0);
     lv_obj_set_style_bg_color(voiceButton, lv_color_hex(0x2563eb), LV_STATE_PRESSED);
     lv_obj_set_style_radius(voiceButton, 16, 0);
@@ -421,12 +432,14 @@ void LVGL_UI::updatePersonPresence(int personIndex, const char* name, bool prese
     
     // Update the person card directly
     if (personCards[personIndex] && personLabels[personIndex]) {
-        // Update background color: green if home, dark if away
+        // Update background color: green if home, dark if away (50% transparent)
         if (present) {
             lv_obj_set_style_bg_color(personCards[personIndex], lv_color_hex(0x22c55e), 0);  // Green
+            lv_obj_set_style_bg_opa(personCards[personIndex], LV_OPA_50, 0);  // 50% transparent
             lv_obj_set_style_text_color(personLabels[personIndex], lv_color_hex(0xFFFFFF), 0);
         } else {
             lv_obj_set_style_bg_color(personCards[personIndex], lv_color_hex(0x2a2a3e), 0);  // Dark
+            lv_obj_set_style_bg_opa(personCards[personIndex], LV_OPA_50, 0);  // 50% transparent
             lv_obj_set_style_text_color(personLabels[personIndex], lv_color_hex(0x808080), 0);
         }
         lv_label_set_text(personLabels[personIndex], name);

@@ -42,7 +42,9 @@ unsigned long lastStatusUpdate = 0;
 unsigned long lastVoiceCheck = 0;
 unsigned long lastWeatherUpdate = 0;
 unsigned long lastPresenceUpdate = 0;
+unsigned long lastTimezoneUpdate = 0;
 bool systemReady = false;
+bool timezoneSet = false;
 
 // Voice command state
 bool isListeningForCommand = false;
@@ -120,6 +122,13 @@ void loop() {
     if (now - lastPresenceUpdate >= 30000) { // Every 30 seconds
         lastPresenceUpdate = now;
         updatePresenceDisplay();
+    }
+    
+    // Timezone update (retry until successful, then check daily)
+    unsigned long timezoneInterval = timezoneSet ? 86400000 : 60000; // Daily if set, every 1 min if not
+    if (now - lastTimezoneUpdate >= timezoneInterval) {
+        lastTimezoneUpdate = now;
+        setTimezoneFromHA();
     }
     
     // Small delay to prevent watchdog issues
@@ -839,6 +848,7 @@ void setTimezoneFromHA() {
                 // Set timezone using POSIX TZ format
                 setenv("TZ", timezone, 1);
                 tzset();
+                timezoneSet = true;
                 log_i("Timezone set to: %s", timezone);
             } else {
                 log_w("No timezone in HA config");
