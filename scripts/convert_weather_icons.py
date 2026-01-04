@@ -8,8 +8,8 @@ import os
 import sys
 from PIL import Image
 
-# Icon size for display (48x48 pixels fits well in 60x60 circle)
-ICON_SIZE = (48, 48)
+# Icon size for display (96x96 pixels for larger display)
+ICON_SIZE = (96, 96)
 
 # Input and output directories
 INPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "pictures", "weather")

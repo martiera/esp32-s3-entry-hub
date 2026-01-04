@@ -143,18 +143,21 @@ void LVGL_UI::loop() {
 }
 
 void LVGL_UI::updateTime() {
-    if (!timeLabel) return;
+    if (!timeLabel || !minutesLabel) return;
     
     time_t now;
     struct tm timeinfo;
     time(&now);
     localtime_r(&now, &timeinfo);
     
-    // Format time as HH:MM
-    char timeStr[6];
-    strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
+    // Format hours and minutes separately
+    char hoursStr[3];
+    char minutesStr[3];
+    strftime(hoursStr, sizeof(hoursStr), "%H", &timeinfo);
+    strftime(minutesStr, sizeof(minutesStr), "%M", &timeinfo);
     
-    lv_label_set_text(timeLabel, timeStr);
+    lv_label_set_text(timeLabel, hoursStr);       // Hours in cyan
+    lv_label_set_text(minutesLabel, minutesStr);  // Minutes in white
 }
 
 void LVGL_UI::createMainScreen() {
@@ -201,45 +204,101 @@ void LVGL_UI::createMainScreen() {
     lv_obj_set_style_text_color(gateStatusLabel, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(gateStatusLabel, LV_ALIGN_BOTTOM_MID, 0, -5);
     
-    // ========== TIME (Top Right: 96x40) ==========
+    // ========== CALENDAR CARD (Center top: 384x80 full width between gate and time) ==========
+    calendarContainer = lv_btn_create(screens[SCREEN_MAIN]);  // Make it a button
+    lv_obj_set_size(calendarContainer, 384, 80);
+    lv_obj_set_pos(calendarContainer, 96, 0);
+    lv_obj_set_style_bg_opa(calendarContainer, LV_OPA_TRANSP, 0);  // Transparent
+    lv_obj_set_style_border_width(calendarContainer, 2, 0);  // Subtle border
+    lv_obj_set_style_border_color(calendarContainer, lv_color_hex(0x3b82f6), 0);  // Blue border
+    lv_obj_set_style_border_opa(calendarContainer, LV_OPA_30, 0);  // Semi-transparent border
+    lv_obj_set_style_radius(calendarContainer, 12, 0);
+    lv_obj_set_style_pad_all(calendarContainer, 12, 0);
+    lv_obj_clear_flag(calendarContainer, LV_OBJ_FLAG_SCROLLABLE);
+    // TODO: Add event callback for calendar button click
+    
+    // Event label (will show event or "No events")
+    calendarEventLabel = lv_label_create(calendarContainer);
+    lv_label_set_text(calendarEventLabel, "No events");
+    lv_obj_set_style_text_font(calendarEventLabel, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(calendarEventLabel, lv_color_hex(0xB0B0B0), 0);
+    lv_obj_set_style_text_align(calendarEventLabel, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(calendarEventLabel, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(calendarEventLabel, 350);
+    lv_obj_center(calendarEventLabel);
+    
+    // Badge indicator for multiple events (hidden by default)
+    calendarMoreButton = lv_obj_create(calendarContainer);
+    lv_obj_set_size(calendarMoreButton, 28, 28);
+    lv_obj_align(calendarMoreButton, LV_ALIGN_TOP_RIGHT, -5, -5);
+    lv_obj_set_style_bg_color(calendarMoreButton, lv_color_hex(0xff4444), 0);  // Red badge
+    lv_obj_set_style_radius(calendarMoreButton, 14, 0);  // Circular
+    lv_obj_set_style_border_width(calendarMoreButton, 2, 0);
+    lv_obj_set_style_border_color(calendarMoreButton, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_shadow_width(calendarMoreButton, 8, 0);
+    lv_obj_set_style_shadow_color(calendarMoreButton, lv_color_hex(0xff4444), 0);
+    lv_obj_set_style_shadow_opa(calendarMoreButton, LV_OPA_50, 0);
+    lv_obj_add_flag(calendarMoreButton, LV_OBJ_FLAG_HIDDEN);  // Hidden by default
+    
+    lv_obj_t* badgeLabel = lv_label_create(calendarMoreButton);
+    lv_label_set_text(badgeLabel, "+");
+    lv_obj_set_style_text_font(badgeLabel, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(badgeLabel, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_center(badgeLabel);
+    
+    // Initialize calendar data
+    calendarEventCount = 0;
+    
+    // ========== TIME (Right side below calendar: 96x140 vertical layout) ==========
     lv_obj_t* timeContainer = lv_obj_create(screens[SCREEN_MAIN]);
-    lv_obj_set_size(timeContainer, 96, 40);
-    lv_obj_set_pos(timeContainer, 384, 0);
-    lv_obj_set_style_bg_opa(timeContainer, LV_OPA_TRANSP, 0);  // Transparent
+    lv_obj_set_size(timeContainer, 96, 140);
+    lv_obj_set_pos(timeContainer, 384, 80);
+    lv_obj_set_style_bg_opa(timeContainer, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(timeContainer, 0, 0);
     lv_obj_clear_flag(timeContainer, LV_OBJ_FLAG_SCROLLABLE);
     
-    timeLabel = lv_label_create(timeContainer);
-    lv_label_set_text(timeLabel, "--:--");
-    lv_obj_set_style_text_font(timeLabel, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(timeLabel, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_center(timeLabel);
+    // Hours label (top, large, cyan color)
+    lv_obj_t* hoursLabel = lv_label_create(timeContainer);
+    lv_label_set_text(hoursLabel, "00");
+    lv_obj_set_style_text_font(hoursLabel, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(hoursLabel, lv_color_hex(0x00D9FF), 0);  // Cyan
+    lv_obj_align(hoursLabel, LV_ALIGN_TOP_MID, 0, 10);
     
-    // ========== WEATHER (Large Center: 288x200 - no card, full area) ==========
-    weatherContainer = lv_obj_create(screens[SCREEN_MAIN]);
-    lv_obj_set_size(weatherContainer, 288, 200);
-    lv_obj_set_pos(weatherContainer, 96, 0);
-    lv_obj_set_style_bg_opa(weatherContainer, LV_OPA_TRANSP, 0);  // Transparent, no card
-    lv_obj_set_style_border_width(weatherContainer, 0, 0);
-    lv_obj_set_style_pad_all(weatherContainer, 15, 0);
-    lv_obj_clear_flag(weatherContainer, LV_OBJ_FLAG_SCROLLABLE);
+    // Minutes label (bottom, large, white color)
+    lv_obj_t* minutesLabel = lv_label_create(timeContainer);
+    lv_label_set_text(minutesLabel, "00");
+    lv_obj_set_style_text_font(minutesLabel, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(minutesLabel, lv_color_hex(0xFFFFFF), 0);  // White
+    lv_obj_align(minutesLabel, LV_ALIGN_BOTTOM_MID, 0, -10);
     
-    // Weather icon (image widget for actual icon) - larger size
-    weatherIcon = lv_img_create(weatherContainer);
+    // Store references for update
+    timeLabel = hoursLabel;
+    this->minutesLabel = minutesLabel;
+    
+    // ========== WEATHER ICON (Left side centered: 96x96) ==========
+    weatherIcon = lv_img_create(screens[SCREEN_MAIN]);
     lv_img_set_src(weatherIcon, &clear_day);  // Default to sunny
-    lv_img_set_zoom(weatherIcon, 384);  // 1.5x scale (256 = 1.0x, 384 = 1.5x)
-    lv_obj_set_pos(weatherIcon, 10, 5);
+    lv_obj_set_pos(weatherIcon, 8, 102);  // To Center between left edge and temp set to 48
     lv_obj_clear_flag(weatherIcon, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(weatherIcon, LV_OBJ_FLAG_HIDDEN);  // Hide until data loaded
     
-    // Temperature label (very large, positioned lower with bigger font)
+    // ========== WEATHER DATA (Center: 288x140 below calendar) ==========
+    weatherContainer = lv_obj_create(screens[SCREEN_MAIN]);
+    lv_obj_set_size(weatherContainer, 288, 140);
+    lv_obj_set_pos(weatherContainer, 96, 80);  // Below calendar
+    lv_obj_set_style_bg_opa(weatherContainer, LV_OPA_TRANSP, 0);  // Transparent, no card
+    lv_obj_set_style_border_width(weatherContainer, 0, 0);
+    lv_obj_set_style_pad_all(weatherContainer, 0, 0);
+    lv_obj_clear_flag(weatherContainer, LV_OBJ_FLAG_SCROLLABLE);
+    
+    // Temperature label (centered both horizontally and vertically)
     tempLabel = lv_label_create(weatherContainer);
     lv_label_set_text(tempLabel, "--°");
     lv_obj_set_style_text_font(tempLabel, &lv_font_montserrat_48, 0);
     lv_obj_set_style_text_color(tempLabel, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_pos(tempLabel, 90, 90);
+    lv_obj_center(tempLabel);
     
-    // Condition label
+    // Condition label (horizontally centered, below temperature)
     conditionLabel = lv_label_create(weatherContainer);
     lv_label_set_text(conditionLabel, "--");
     lv_obj_set_style_text_font(conditionLabel, &lv_font_montserrat_20, 0);
@@ -416,6 +475,7 @@ void LVGL_UI::updateWeather(float temp, const char* condition) {
     lv_label_set_text(conditionLabel, displayCondition);
     
     // Force screen update
+    lv_obj_invalidate(weatherIcon);
     lv_obj_invalidate(weatherContainer);
 }
 
@@ -447,6 +507,99 @@ void LVGL_UI::updatePersonPresence(int personIndex, const char* name, bool prese
         // Force screen update
         lv_obj_invalidate(personCards[personIndex]);
     }
+}
+
+void LVGL_UI::updateCalendar(CalendarEvent* events, int eventCount) {
+    if (!calendarEventLabel || !calendarMoreButton) return;
+    
+    // Store events
+    calendarEventCount = min(eventCount, MAX_CALENDAR_EVENTS);
+    for (int i = 0; i < calendarEventCount; i++) {
+        calendarEvents[i] = events[i];
+    }
+    
+    if (calendarEventCount == 0) {
+        // No events
+        lv_label_set_text(calendarEventLabel, "No events today");
+        lv_obj_set_style_text_font(calendarEventLabel, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_color(calendarEventLabel, lv_color_hex(0xB0B0B0), 0);
+        lv_obj_center(calendarEventLabel);
+        lv_obj_add_flag(calendarMoreButton, LV_OBJ_FLAG_HIDDEN);  // Hide badge
+    }
+    else if (calendarEventCount == 1) {
+        // One event - show with colored indicator for day
+        char eventText[128];
+        bool isAllDay = (strstr(calendarEvents[0].time, "All day") != NULL);
+        bool isToday = (strstr(calendarEvents[0].time, "TODAY") != NULL);
+        bool isTomorrow = (strstr(calendarEvents[0].time, "TOMORROW") != NULL);
+        
+        // Extract just the time without day label
+        const char* timeOnly = "";
+        if (isAllDay) {
+            timeOnly = "[ALL DAY]";
+        } else if (isToday && strlen(calendarEvents[0].time) > 6) {
+            timeOnly = calendarEvents[0].time + 6; // Skip "TODAY "
+        } else if (isTomorrow && strlen(calendarEvents[0].time) > 9) {
+            timeOnly = calendarEvents[0].time + 9; // Skip "TOMORROW "
+        }
+        
+        // Use bullet for day indicator: ● for today, ◆ for tomorrow
+        const char* dayBadge = isToday ? "#00ff00 ●# " : (isTomorrow ? "#ffaa00 ◆# " : "");
+        snprintf(eventText, sizeof(eventText), "%s%s - %s", 
+                 dayBadge, timeOnly, calendarEvents[0].title);
+        
+        lv_label_set_text(calendarEventLabel, eventText);
+        lv_label_set_recolor(calendarEventLabel, true);  // Enable color codes
+        lv_obj_set_style_text_font(calendarEventLabel, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_color(calendarEventLabel, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(calendarEventLabel);
+        lv_obj_add_flag(calendarMoreButton, LV_OBJ_FLAG_HIDDEN);  // Hide badge
+    }
+    else {
+        // Multiple events - show first event with red badge indicator
+        char eventText[128];
+        bool isAllDay = (strstr(calendarEvents[0].time, "All day") != NULL);
+        bool isToday = (strstr(calendarEvents[0].time, "TODAY") != NULL);
+        bool isTomorrow = (strstr(calendarEvents[0].time, "TOMORROW") != NULL);
+        
+        // Extract just the time without day label
+        const char* timeOnly = "";
+        if (isAllDay) {
+            timeOnly = "[ALL DAY]";
+        } else if (isToday && strlen(calendarEvents[0].time) > 6) {
+            timeOnly = calendarEvents[0].time + 6;
+        } else if (isTomorrow && strlen(calendarEvents[0].time) > 9) {
+            timeOnly = calendarEvents[0].time + 9;
+        }
+        
+        // Use bullet for day indicator
+        const char* dayBadge = isToday ? "#00ff00 ●# " : (isTomorrow ? "#ffaa00 ◆# " : "");
+        snprintf(eventText, sizeof(eventText), "%s%s - %s", 
+                 dayBadge, timeOnly, calendarEvents[0].title);
+        
+        lv_label_set_text(calendarEventLabel, eventText);
+        lv_label_set_recolor(calendarEventLabel, true);  // Enable color codes
+        lv_obj_set_style_text_font(calendarEventLabel, &lv_font_montserrat_18, 0);
+        lv_obj_set_style_text_color(calendarEventLabel, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(calendarEventLabel);
+        
+        // Show red badge with count
+        lv_obj_t* badgeLabel = lv_obj_get_child(calendarMoreButton, 0);
+        if (badgeLabel) {
+            char badgeText[4];
+            int extraCount = calendarEventCount - 1;
+            if (extraCount > 9) {
+                snprintf(badgeText, sizeof(badgeText), "9+");
+            } else {
+                snprintf(badgeText, sizeof(badgeText), "+%d", extraCount);
+            }
+            lv_label_set_text(badgeLabel, badgeText);
+        }
+        lv_obj_clear_flag(calendarMoreButton, LV_OBJ_FLAG_HIDDEN);  // Show badge
+    }
+    
+    // Force screen update
+    lv_obj_invalidate(calendarContainer);
 }
 
 void LVGL_UI::setAnyoneHome(bool isHome) {

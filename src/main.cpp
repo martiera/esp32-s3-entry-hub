@@ -42,6 +42,7 @@ unsigned long lastStatusUpdate = 0;
 unsigned long lastVoiceCheck = 0;
 unsigned long lastWeatherUpdate = 0;
 unsigned long lastPresenceUpdate = 0;
+unsigned long lastCalendarUpdate = 0;
 unsigned long lastTimezoneUpdate = 0;
 bool systemReady = false;
 bool timezoneSet = false;
@@ -61,6 +62,7 @@ void processVoiceCommand(const char* command);
 void onAssistResult(const char* transcription, const char* response, const char* error);
 void updateWeatherDisplay();
 void updatePresenceDisplay();
+void updateCalendarDisplay();
 void setTimezoneFromHA();
 
 
@@ -122,6 +124,12 @@ void loop() {
     if (now - lastPresenceUpdate >= 30000) { // Every 30 seconds
         lastPresenceUpdate = now;
         updatePresenceDisplay();
+    }
+    
+    // Periodic calendar updates
+    if (now - lastCalendarUpdate >= 600000) { // Every 10 minutes
+        lastCalendarUpdate = now;
+        updateCalendarDisplay();
     }
     
     // Timezone update (retry until successful, then check daily)
@@ -256,6 +264,7 @@ void setupSystem() {
     Serial.print("→ Fetching initial data... ");
     updateWeatherDisplay();
     updatePresenceDisplay();
+    updateCalendarDisplay();
     Serial.println("✓");
     
     // 10. Notification Manager
@@ -845,11 +854,31 @@ void setTimezoneFromHA() {
         if (!error) {
             const char* timezone = haConfig["time_zone"];
             if (timezone && strlen(timezone) > 0) {
-                // Set timezone using POSIX TZ format
-                setenv("TZ", timezone, 1);
+                // Convert timezone name to POSIX format
+                // Most common European timezones
+                String tz = String(timezone);
+                String posixTz;
+                
+                if (tz == "Europe/Riga" || tz == "Europe/Helsinki" || tz == "Europe/Athens") {
+                    posixTz = "EET-2EEST,M3.5.0/3,M10.5.0/4";
+                } else if (tz == "Europe/London") {
+                    posixTz = "GMT0BST,M3.5.0/1,M10.5.0";
+                } else if (tz == "Europe/Berlin" || tz == "Europe/Paris" || tz == "Europe/Rome") {
+                    posixTz = "CET-1CEST,M3.5.0,M10.5.0/3";
+                } else if (tz == "America/New_York") {
+                    posixTz = "EST5EDT,M3.2.0,M11.1.0";
+                } else if (tz == "America/Los_Angeles") {
+                    posixTz = "PST8PDT,M3.2.0,M11.1.0";
+                } else {
+                    // Default to UTC if unknown
+                    posixTz = "UTC0";
+                    log_w("Unknown timezone %s, using UTC", timezone);
+                }
+                
+                setenv("TZ", posixTz.c_str(), 1);
                 tzset();
                 timezoneSet = true;
-                log_i("Timezone set to: %s", timezone);
+                log_i("Timezone set to: %s (POSIX: %s)", timezone, posixTz.c_str());
             } else {
                 log_w("No timezone in HA config");
             }
@@ -858,6 +887,118 @@ void setTimezoneFromHA() {
         }
     } else {
         log_e("Failed to fetch HA config: HTTP %d", httpCode);
+    }
+    
+    http.end();
+}
+
+void updateCalendarDisplay() {
+    JsonDocument config;
+    if (!storage.loadConfig(config)) {
+        log_e("Failed to load config for calendar");
+        return;
+    }
+    
+    const char* haUrl = config["integrations"]["home_assistant"]["url"];
+    const char* haToken = config["integrations"]["home_assistant"]["token"];
+    const char* entityId = config["integrations"]["calendar"]["home_assistant"]["entity_id"] | "calendar.family";
+    
+    if (!haUrl || strlen(haUrl) == 0 || !haToken || strlen(haToken) == 0) {
+        return;
+    }
+    
+    // Build URL for calendar events
+    String url = String(haUrl);
+    if (!url.endsWith("/")) url += "/";
+    url += "api/calendars/";
+    url += entityId;
+    
+    // Get events for today only
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    
+    char startDate[12];
+    char endDate[12];
+    
+    // Start: today at 00:00
+    snprintf(startDate, sizeof(startDate), "%04d-%02d-%02d",
+             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday);
+    
+    // End: day after tomorrow at 00:00 (to include tomorrow's events)
+    time_t endTime = now + (2 * 24 * 60 * 60);
+    struct tm* endTimeinfo = localtime(&endTime);
+    snprintf(endDate, sizeof(endDate), "%04d-%02d-%02d",
+             endTimeinfo->tm_year + 1900, endTimeinfo->tm_mon + 1, endTimeinfo->tm_mday);
+    
+    url += "?start=";
+    url += startDate;
+    url += "&end=";
+    url += endDate;
+    
+    HTTPClient http;
+    http.begin(url);
+    http.addHeader("Authorization", String("Bearer ") + haToken);
+    http.setTimeout(5000);
+    
+    int httpCode = http.GET();
+    
+    if (httpCode == 200) {
+        String payload = http.getString();
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, payload);
+        
+        if (!error) {
+            JsonArray haEvents = doc.as<JsonArray>();
+            int eventCount = min((int)haEvents.size(), MAX_CALENDAR_EVENTS);
+            CalendarEvent events[MAX_CALENDAR_EVENTS];
+            
+            // Get today's and tomorrow's dates for comparison
+            int todayDay = timeinfo->tm_mday;
+            time_t tomorrow = now + (24 * 60 * 60);
+            struct tm* tomorrowInfo = localtime(&tomorrow);
+            int tomorrowDay = tomorrowInfo->tm_mday;
+            
+            for (int i = 0; i < eventCount; i++) {
+                JsonObject event = haEvents[i];
+                const char* summary = event["summary"] | "Event";
+                const char* start = event["start"]["dateTime"] | event["start"]["date"];
+                
+                // Copy title
+                strncpy(events[i].title, summary, sizeof(events[i].title) - 1);
+                events[i].title[sizeof(events[i].title) - 1] = '\0';
+                
+                // Determine day and extract time
+                if (start && strlen(start) >= 10) {
+                    // Extract day from date (YYYY-MM-DD)
+                    int eventDay = atoi(start + 8);
+                    const char* dayLabel = "";
+                    
+                    if (eventDay == todayDay) {
+                        dayLabel = "TODAY";
+                    } else if (eventDay == tomorrowDay) {
+                        dayLabel = "TOMORROW";
+                    }
+                    
+                    // Check if it's a datetime or just date
+                    if (strchr(start, 'T') && strlen(start) >= 16) {
+                        // Has time component
+                        snprintf(events[i].time, sizeof(events[i].time), "%s %.2s:%.2s", 
+                                dayLabel, start + 11, start + 14);
+                    } else {
+                        // All-day event
+                        snprintf(events[i].time, sizeof(events[i].time), "%s All day", dayLabel);
+                    }
+                } else {
+                    strcpy(events[i].time, "");
+                }
+            }
+            
+            lvglUI.updateCalendar(events, eventCount);
+        } else {
+            log_e("Failed to parse calendar response: %s", error.c_str());
+        }
+    } else {
+        log_e("Failed to fetch calendar from HA: HTTP %d", httpCode);
     }
     
     http.end();

@@ -10,12 +10,19 @@
 #define SCREEN_WIDTH 480
 #define SCREEN_HEIGHT 320
 #define MAX_PEOPLE 4
+#define MAX_CALENDAR_EVENTS 5
 
 // Screen IDs
 enum ScreenID {
     SCREEN_MAIN = 0,
     SCREEN_QUICK_ACTIONS = 1,
     SCREEN_COUNT = 2
+};
+
+// Calendar event data
+struct CalendarEvent {
+    char title[64];
+    char time[32];  // e.g., "TODAY 14:00", "TOMORROW 09:00", "All day"
 };
 
 // Person presence data
@@ -38,6 +45,7 @@ public:
     void updatePersonPresence(int personIndex, const char* name, bool present, uint32_t color);
     void updateGateStatus(bool isOpen);
     void setAnyoneHome(bool isHome);
+    void updateCalendar(CalendarEvent* events, int eventCount);
     
     // Screen navigation
     void showScreen(ScreenID screenId);
@@ -64,7 +72,8 @@ private:
     lv_obj_t* bgImage;        // Background image
     
     // Time display
-    lv_obj_t* timeLabel;
+    lv_obj_t* timeLabel;      // Hours
+    lv_obj_t* minutesLabel;   // Minutes
     
     // Weather (centered)
     lv_obj_t* weatherContainer;
@@ -86,6 +95,13 @@ private:
     
     // Voice button (small, bottom right)
     lv_obj_t* voiceButton;
+    
+    // Calendar card (top right below time)
+    lv_obj_t* calendarContainer;
+    lv_obj_t* calendarEventLabel;
+    lv_obj_t* calendarMoreButton;
+    CalendarEvent calendarEvents[MAX_CALENDAR_EVENTS];
+    int calendarEventCount;
     
     // Quick Actions screen widgets
     lv_obj_t* quickActionsLabel;
