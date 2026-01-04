@@ -14,6 +14,19 @@ document.addEventListener('DOMContentLoaded', function() {
     startStatusUpdates();
 });
 
+// Clean up when page unloads
+window.addEventListener('beforeunload', function() {
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+    }
+    if (statusRefreshInterval) {
+        clearInterval(statusRefreshInterval);
+    }
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+    }
+});
+
 // Close modal when clicking outside
 window.onclick = function(event) {
     const modal = document.getElementById('personSelectorModal');
@@ -78,6 +91,18 @@ function navigateToPage(pageName) {
 
 // WebSocket Connection
 function connectWebSocket() {
+    // Clear any existing reconnect interval
+    if (reconnectInterval) {
+        clearInterval(reconnectInterval);
+        reconnectInterval = null;
+    }
+    
+    // Close existing WebSocket if open
+    if (ws && ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+        console.log('Closing existing WebSocket connection');
+        ws.close();
+    }
+    
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.hostname}/ws`;
     
@@ -87,7 +112,11 @@ function connectWebSocket() {
     ws.onopen = function() {
         console.log('WebSocket connected');
         updateConnectionStatus(true);
-        clearInterval(reconnectInterval);
+        // Clear reconnect interval on successful connection
+        if (reconnectInterval) {
+            clearInterval(reconnectInterval);
+            reconnectInterval = null;
+        }
     };
     
     ws.onmessage = function(event) {
@@ -103,11 +132,14 @@ function connectWebSocket() {
         console.log('WebSocket disconnected');
         updateConnectionStatus(false);
         
-        // Attempt to reconnect
-        reconnectInterval = setInterval(() => {
-            console.log('Attempting to reconnect...');
-            connectWebSocket();
-        }, 5000);
+        // Only start reconnect interval if one isn't already running
+        if (!reconnectInterval) {
+            console.log('Scheduling reconnection in 5 seconds...');
+            reconnectInterval = setInterval(() => {
+                console.log('Attempting to reconnect...');
+                connectWebSocket();
+            }, 5000);
+        }
     };
 }
 

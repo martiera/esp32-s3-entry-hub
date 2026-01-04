@@ -127,11 +127,10 @@
 // ============================================
 // LVGL Configuration (when display enabled)
 // ============================================
+// Note: LV_MEM_SIZE is defined in lv_conf.h
 #ifdef HAS_PSRAM
-    #define LV_MEM_SIZE         (128 * 1024)  // 128KB for LVGL
     #define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * 40)  // 40 lines buffer
 #else
-    #define LV_MEM_SIZE         (32 * 1024)   // 32KB without PSRAM
     #define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * 10)  // 10 lines buffer
 #endif
 

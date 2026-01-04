@@ -215,3 +215,30 @@ Pull requests welcome! Please read CONTRIBUTING.md first.
 - TensorFlow Lite Micro
 - LVGL Graphics Library
 - Home Assistant Community
+- Weather icons from [Visual Crossing Weather Icons](https://github.com/visualcrossing/WeatherIcons) (LGPL-3.0)
+
+## Assets & Resources
+
+### Weather Icons
+
+Weather icons are sourced from the **Visual Crossing Weather Icons** repository:
+- 📦 Repository: https://github.com/visualcrossing/WeatherIcons
+- 📄 License: LGPL-3.0
+- 🎨 Style: 1st Set - Color (PNG format)
+- 📐 Size: 48x48 pixels (resized from originals)
+
+The icons cover all Home Assistant weather conditions including:
+- Clear day/night, Cloudy, Partly cloudy
+- Rain, Snow, Fog, Wind
+- Thunderstorms
+
+When adding new icons or updating existing ones, use the provided scripts:
+```bash
+# Download icons from GitHub
+python3 scripts/download_weather_icons.py
+
+# Convert to LVGL C arrays
+python3 scripts/convert_weather_icons.py
+```
+
+Icons are automatically converted to RGB565 format with alpha channel and stored in flash memory (PROGMEM) to conserve RAM.
