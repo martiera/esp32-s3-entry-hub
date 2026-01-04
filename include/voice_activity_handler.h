@@ -50,6 +50,7 @@ public:
     
     // Statistics
     int32_t getLastAudioLevel() const { return lastAudioLevel; }
+    int32_t getAdaptiveBaseline() const { return adaptiveBaseline; }
     unsigned long getLastDetectionTime() const { return lastDetectionTime; }
     
 private:
@@ -58,12 +59,24 @@ private:
     float sensitivity;
     
     WakeMode wakeMode;
-    int32_t voiceThreshold;      // Threshold for voice activity detection
+    int32_t voiceThreshold;      // Minimum threshold for voice activity detection
     int32_t lastAudioLevel;      // Last measured audio level
     unsigned long lastDetectionTime;
     unsigned long cooldownUntil; // Prevents rapid re-triggering
     
+    // Adaptive baseline tracking
+    static const int BASELINE_SAMPLES = 60;  // Track 60 samples (~1 minute at 1 sample/sec)
+    int32_t baselineLevels[BASELINE_SAMPLES];
+    int baselineIndex;
+    int32_t adaptiveBaseline;    // Current baseline level
+    unsigned long lastBaselineUpdate;
+    
+    void updateBaseline(int32_t level);
+    int32_t calculateBaseline();
+    
     static const unsigned long COOLDOWN_MS = 2000; // 2 second cooldown after detection
+    static const unsigned long BASELINE_UPDATE_MS = 1000; // Update baseline every second
+    static const float SPIKE_MULTIPLIER; // Spike must be this much above baseline
 };
 
 extern VoiceActivityHandler voiceActivity;

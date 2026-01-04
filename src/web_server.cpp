@@ -92,6 +92,11 @@ void WebServerManager::setupAPIEndpoints() {
             handleSaveWeatherConfig(request, data, len);
         });
     
+    server.on("/api/config/voice", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+            handleSaveVoiceConfig(request, data, len);
+        });
+    
     server.on("/api/config/homeassistant", HTTP_POST, [this](AsyncWebServerRequest *request) {}, NULL,
         [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
             handleSaveHomeAssistantConfig(request, data, len);
@@ -190,6 +195,7 @@ void WebServerManager::handleGetStatus(AsyncWebServerRequest *request) {
     doc["voice"]["mode"] = voiceActivity.getWakeMode() == WAKE_MODE_THRESHOLD ? "threshold" : "manual";
     doc["voice"]["active"] = voiceActivity.isVoiceDetected();
     doc["voice"]["audio_level"] = voiceActivity.getLastAudioLevel();
+    doc["voice"]["baseline"] = voiceActivity.getAdaptiveBaseline();
     doc["voice"]["threshold"] = voiceActivity.getThreshold();
     
     doc["storage"]["total"] = storage.getTotalSpace();
@@ -438,6 +444,42 @@ void WebServerManager::handleSaveWeatherConfig(AsyncWebServerRequest *request, u
     }
     if (newWeatherConfig["home_assistant"].is<JsonObject>()) {
         config["weather"]["home_assistant"] = newWeatherConfig["home_assistant"];
+    }
+    
+    // Save config
+    if (storage.saveConfig(config)) {
+        request->send(200, "application/json", "{\"success\":true}");
+    } else {
+        request->send(500, "application/json", "{\"error\":\"Failed to save config\"}");
+    }
+}
+
+void WebServerManager::handleSaveVoiceConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len) {
+    JsonDocument newVoiceConfig;
+    DeserializationError error = deserializeJson(newVoiceConfig, data, len);
+    
+    if (error) {
+        request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+        return;
+    }
+    
+    // Load existing config
+    JsonDocument config;
+    if (!storage.loadConfig(config)) {
+        config["device"]["name"] = DEVICE_NAME;
+    }
+    
+    // Update voice section
+    if (!newVoiceConfig["voice"].isNull() && newVoiceConfig["voice"].is<JsonObject>()) {
+        if (!newVoiceConfig["voice"]["sensitivity"].isNull()) {
+            float sensitivity = newVoiceConfig["voice"]["sensitivity"].as<float>();
+            config["voice"]["sensitivity"] = sensitivity;
+            
+            // Apply immediately to voice activity handler
+            voiceActivity.setSensitivity(sensitivity);
+            
+            log_i("Voice sensitivity updated to: %.2f", sensitivity);
+        }
     }
     
     // Save config

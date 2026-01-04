@@ -184,7 +184,8 @@ async function loadInitialData() {
         loadPresence(),
         loadWeather(),
         loadCalendar(),
-        loadIntegrations()
+        loadIntegrations(),
+        loadVoiceConfig()
     ]);
 }
 
@@ -192,6 +193,22 @@ async function loadSystemStatus() {
     const status = await apiGet('status');
     if (status) {
         updateSystemStatus(status);
+    }
+}
+
+async function loadVoiceConfig() {
+    const config = await apiGet('config');
+    if (config && config.voice) {
+        // Load sensitivity slider value
+        const slider = document.getElementById('sensitivitySlider');
+        const sensitivityValue = document.getElementById('sensitivityValue');
+        if (slider && config.voice.sensitivity !== undefined) {
+            const sensitivityPercent = Math.round(config.voice.sensitivity * 100);
+            slider.value = sensitivityPercent;
+            if (sensitivityValue) {
+                sensitivityValue.textContent = sensitivityPercent;
+            }
+        }
     }
 }
 
@@ -213,7 +230,41 @@ function updateSystemStatus(status) {
     
     // Voice status
     if (status.voice) {
-        document.getElementById('wakeWord').textContent = status.voice.wake_word;
+        // Update dashboard sound threshold display
+        const threshold = status.voice.threshold || 0;
+        const audioLevel = status.voice.audio_level || 0;
+        const thresholdLabel = threshold > 200000000 ? 'High' : threshold > 100000000 ? 'Medium' : 'Low';
+        
+        const soundThresholdEl = document.getElementById('soundThreshold');
+        if (soundThresholdEl) {
+            soundThresholdEl.textContent = thresholdLabel;
+        }
+        
+        const audioLevelEl = document.getElementById('audioLevel');
+        if (audioLevelEl) {
+            const levelMB = (audioLevel / 1000000).toFixed(1);
+            audioLevelEl.textContent = levelMB + 'M';
+        }
+        
+        // Update voice control page current values
+        const currentAudioLevel = document.getElementById('currentAudioLevel');
+        if (currentAudioLevel) {
+            const levelMB = (audioLevel / 1000000).toFixed(1);
+            currentAudioLevel.textContent = levelMB + 'M';
+        }
+        
+        const currentBaseline = document.getElementById('currentBaseline');
+        if (currentBaseline && status.voice.baseline !== undefined) {
+            const baselineMB = (status.voice.baseline / 1000000).toFixed(1);
+            currentBaseline.textContent = baselineMB + 'M';
+        }
+        
+        const currentThreshold = document.getElementById('currentThreshold');
+        if (currentThreshold) {
+            const thresholdMB = (threshold / 1000000).toFixed(1);
+            currentThreshold.textContent = thresholdMB + 'M';
+        }
+        
         const voiceStatus = document.getElementById('voiceStatus');
         if (status.voice.active) {
             voiceStatus.textContent = 'Active';
@@ -682,6 +733,14 @@ function startStatusUpdates() {
     // Load initial status immediately
     loadSystemStatus();
     
+    // Refresh voice stats more frequently when on voice page
+    setInterval(() => {
+        const voicePage = document.getElementById('page-voice');
+        if (voicePage && voicePage.classList.contains('active')) {
+            loadSystemStatus(); // Update voice levels in real-time
+        }
+    }, 1000); // Update every second when on voice page
+    
     // Only use periodic fallback if WebSocket is disconnected
     statusRefreshInterval = setInterval(() => {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -701,20 +760,27 @@ async function triggerScene(sceneName) {
     }
 }
 
-async function saveWakeWordSettings() {
-    const wakeWord = document.getElementById('wakeWordSelect').value;
+async function saveVoiceSettings() {
     const sensitivity = document.getElementById('sensitivitySlider').value;
     
-    const result = await apiPost('config', {
-        wake_word: wakeWord,
-        sensitivity: sensitivity / 100
+    const result = await apiPost('config/voice', {
+        voice: {
+            sensitivity: parseFloat(sensitivity) / 100.0
+        }
     });
     
     if (result && result.success) {
-        showNotification('Settings saved successfully', 'success');
+        showNotification('Voice settings saved successfully', 'success');
+        // Reload status to show updated values
+        setTimeout(() => loadSystemStatus(), 500);
     } else {
-        showNotification('Failed to save settings', 'error');
+        showNotification('Failed to save voice settings', 'error');
     }
+}
+
+// Keep old function name for backwards compatibility
+async function saveWakeWordSettings() {
+    return saveVoiceSettings();
 }
 
 function showAddCommandModal() {
@@ -771,7 +837,7 @@ function exportConfig() {
 
 function handleVoiceDetection(message) {
     document.getElementById('lastDetection').textContent = 'Just now';
-    showNotification(`Wake word detected: ${message.wake_word}`, 'success');
+    showNotification('Voice activity detected - listening...', 'success');
 }
 
 function updatePresenceStatus(message) {

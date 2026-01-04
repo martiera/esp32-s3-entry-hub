@@ -257,6 +257,13 @@ void setupSystem() {
         Serial.println("✓");
         // Apply configuration settings here
         
+        // Load voice sensitivity from config
+        if (config["voice"]["sensitivity"].is<float>()) {
+            float sensitivity = config["voice"]["sensitivity"].as<float>();
+            voiceActivity.setSensitivity(sensitivity);
+            Serial.printf("   Voice sensitivity: %.2f\n", sensitivity);
+        }
+        
         // Update existing config with token from secrets.h if missing
         if (!config["integrations"]["home_assistant"]["token"].is<const char*>() || 
             String(config["integrations"]["home_assistant"]["token"].as<const char*>()).isEmpty()) {
@@ -272,8 +279,7 @@ void setupSystem() {
         // Create default configuration with secrets from secrets.h
         config["device"]["name"] = DEVICE_NAME;
         config["device"]["version"] = DEVICE_VERSION;
-        config["wake_word"] = "jarvis";
-        config["sensitivity"] = WAKE_WORD_SENSITIVITY;
+        config["voice"]["sensitivity"] = WAKE_WORD_SENSITIVITY;
         
         // Initialize integrations with secrets
         config["integrations"]["home_assistant"]["enabled"] = true;
@@ -324,19 +330,23 @@ void onAssistResult(const char* transcription, const char* response, const char*
         return;
     }
     
+    // Trim leading/trailing whitespace (Whisper often adds leading space)
+    String trimmedTranscription = String(transcription);
+    trimmedTranscription.trim();
+    
     Serial.println("\n═══════════════════════════════════");
     Serial.println("🗣️  SPEECH RECOGNIZED");
-    Serial.printf("You said: \"%s\"\n", transcription);
+    Serial.printf("You said: \"%s\"\n", trimmedTranscription.c_str());
     Serial.println("═══════════════════════════════════\n");
     
     // Update HA sensors
-    homeAssistant.updateVoiceCommandSensor(transcription);
+    homeAssistant.updateVoiceCommandSensor(trimmedTranscription.c_str());
     
     // Process command locally on ESP32
-    processVoiceCommand(transcription);
+    processVoiceCommand(trimmedTranscription.c_str());
     
     // Show on display
-    display.showNotification("Voice Command", transcription);
+    display.showNotification("Voice Command", trimmedTranscription.c_str());
 }
 
 void handleVoiceRecognition() {

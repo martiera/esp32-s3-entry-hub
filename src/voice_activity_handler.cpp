@@ -6,15 +6,24 @@
 
 VoiceActivityHandler voiceActivity;
 
+const float VoiceActivityHandler::SPIKE_MULTIPLIER = 2.0f; // Spike must be 2x baseline
+
 VoiceActivityHandler::VoiceActivityHandler() 
     : initialized(false), 
       voiceDetected(false), 
       sensitivity(WAKE_WORD_SENSITIVITY),
       wakeMode(WAKE_MODE_THRESHOLD),
-      voiceThreshold(100000000),  // Lower threshold for easier triggering
+      voiceThreshold(100000000),  // Minimum threshold for voice activity detection
       lastAudioLevel(0),
       lastDetectionTime(0),
-      cooldownUntil(0) {
+      cooldownUntil(0),
+      baselineIndex(0),
+      adaptiveBaseline(0),
+      lastBaselineUpdate(0) {
+    // Initialize baseline array with zeros
+    for (int i = 0; i < BASELINE_SAMPLES; i++) {
+        baselineLevels[i] = 0;
+    }
 }
 
 bool VoiceActivityHandler::begin() {
@@ -75,14 +84,28 @@ bool VoiceActivityHandler::processAudioFrame(int16_t* frame, size_t frameLength)
     int32_t peakToPeak = ((int32_t)maxVal - (int32_t)minVal) * 65536;
     lastAudioLevel = peakToPeak;
     
-    // Check if above threshold
-    if (peakToPeak > voiceThreshold) {
+    // Update adaptive baseline periodically
+    unsigned long now = millis();
+    if (now - lastBaselineUpdate >= BASELINE_UPDATE_MS) {
+        updateBaseline(peakToPeak);
+        lastBaselineUpdate = now;
+    }
+    
+    // Two-stage detection:
+    // 1. Must exceed minimum configured threshold (prevents silent room triggers)
+    // 2. Must be a significant spike above recent baseline (prevents continuous talk triggers)
+    
+    bool aboveMinThreshold = peakToPeak > voiceThreshold;
+    int32_t spikeThreshold = adaptiveBaseline * SPIKE_MULTIPLIER;
+    bool isSpike = (adaptiveBaseline > 0) ? (peakToPeak > spikeThreshold) : true;
+    
+    if (aboveMinThreshold && isSpike) {
         voiceDetected = true;
         lastDetectionTime = millis();
         cooldownUntil = millis() + COOLDOWN_MS;
         
-        log_i("🎤 Voice activity detected! Level: %ld (threshold: %ld)", 
-              peakToPeak, voiceThreshold);
+        log_i("🎤 Voice spike detected! Level: %ld, Baseline: %ld, MinThreshold: %ld", 
+              peakToPeak, adaptiveBaseline, voiceThreshold);
         
         return true;
     }
@@ -132,4 +155,50 @@ void VoiceActivityHandler::triggerWake() {
     cooldownUntil = millis() + COOLDOWN_MS;
     
     log_i("🎤 Manual wake triggered!");
+}
+
+void VoiceActivityHandler::updateBaseline(int32_t level) {
+    // Add current level to circular buffer
+    baselineLevels[baselineIndex] = level;
+    baselineIndex = (baselineIndex + 1) % BASELINE_SAMPLES;
+    
+    // Recalculate baseline
+    adaptiveBaseline = calculateBaseline();
+}
+
+int32_t VoiceActivityHandler::calculateBaseline() {
+    // Calculate baseline as 75th percentile of recent samples
+    // This ignores occasional loud spikes but tracks general room noise level
+    
+    // Count valid samples
+    int validCount = 0;
+    for (int i = 0; i < BASELINE_SAMPLES; i++) {
+        if (baselineLevels[i] > 0) validCount++;
+    }
+    
+    if (validCount == 0) return 0;
+    
+    // Copy and sort samples
+    int32_t sorted[BASELINE_SAMPLES];
+    int sortedIdx = 0;
+    for (int i = 0; i < BASELINE_SAMPLES; i++) {
+        if (baselineLevels[i] > 0) {
+            sorted[sortedIdx++] = baselineLevels[i];
+        }
+    }
+    
+    // Simple bubble sort (small array, infrequent operation)
+    for (int i = 0; i < sortedIdx - 1; i++) {
+        for (int j = 0; j < sortedIdx - i - 1; j++) {
+            if (sorted[j] > sorted[j + 1]) {
+                int32_t temp = sorted[j];
+                sorted[j] = sorted[j + 1];
+                sorted[j + 1] = temp;
+            }
+        }
+    }
+    
+    // Return 75th percentile (ignores highest spikes)
+    int percentile75Index = (sortedIdx * 3) / 4;
+    return sorted[percentile75Index];
 }

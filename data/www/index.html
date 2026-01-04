@@ -109,8 +109,12 @@
                                 </div>
                             </div>
                             <div class="stat-row">
-                                <span class="stat-label">Wake Word</span>
-                                <span class="stat-value" id="wakeWord">Jarvis</span>
+                                <span class="stat-label">Sound Threshold</span>
+                                <span class="stat-value" id="soundThreshold">Medium</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Audio Level</span>
+                                <span class="stat-value" id="audioLevel">0</span>
                             </div>
                             <div class="stat-row">
                                 <span class="stat-label">Last Detection</span>
@@ -192,30 +196,37 @@
             <section id="page-voice" class="page">
                 <div class="page-header">
                     <h2>Voice Control</h2>
-                    <p>Manage wake words and voice commands</p>
+                    <p>Manage voice detection and commands</p>
                 </div>
 
-                <!-- Wake Word Settings -->
+                <!-- Voice Detection Settings -->
                 <div class="card">
                     <div class="card-header">
-                        <h3>Wake Word</h3>
+                        <h3>Voice Detection</h3>
                     </div>
                     <div class="card-body">
                         <div class="form-group">
-                            <label for="wakeWordSelect">Active Wake Word</label>
-                            <select id="wakeWordSelect" class="form-control">
-                                <option value="jarvis">Jarvis</option>
-                                <option value="alexa">Alexa</option>
-                                <option value="computer">Computer</option>
-                                <option value="hey_google">Hey Google</option>
-                                <option value="custom">Custom...</option>
-                            </select>
+                            <label>Current Audio Level</label>
+                            <div class="stat-row">
+                                <span class="stat-label">Level</span>
+                                <span class="stat-value" id="currentAudioLevel">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Baseline (Avg)</span>
+                                <span class="stat-value" id="currentBaseline">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Min Threshold</span>
+                                <span class="stat-value" id="currentThreshold">0</span>
+                            </div>
+                            <p class="form-help">Voice triggers when level spikes 2x above baseline AND exceeds min threshold</p>
                         </div>
                         <div class="form-group">
-                            <label for="sensitivitySlider">Sensitivity: <span id="sensitivityValue">50</span>%</label>
+                            <label for="sensitivitySlider">Detection Sensitivity: <span id="sensitivityValue">50</span>%</label>
                             <input type="range" id="sensitivitySlider" class="slider" min="0" max="100" value="50">
+                            <p class="form-help">Higher sensitivity = easier to trigger voice detection</p>
                         </div>
-                        <button class="btn btn-primary" onclick="saveWakeWordSettings()">Save Settings</button>
+                        <button class="btn btn-primary" onclick="saveVoiceSettings()">Save Settings</button>
                     </div>
                 </div>
 

@@ -45,6 +45,7 @@ private:
     void handleGetCalendar(AsyncWebServerRequest *request);
     void handleHomeAssistantCalendar(AsyncWebServerRequest *request, JsonDocument& config);
     void handleSaveWeatherConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
+    void handleSaveVoiceConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleSaveHomeAssistantConfig(AsyncWebServerRequest *request, uint8_t *data, size_t len);
     void handleCheckHomeAssistantConnection(AsyncWebServerRequest *request);
     void handleGetHomeAssistantPersons(AsyncWebServerRequest *request);
