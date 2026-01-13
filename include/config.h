@@ -95,7 +95,7 @@
 // ============================================
 // Voice Recognition
 // ============================================
-#define WAKE_WORD_SENSITIVITY   0.5f
+#define WAKE_WORD_SENSITIVITY   0.3f    // Lower = requires louder speech (0.0-1.0)
 #define COMMAND_TIMEOUT_MS      5000
 #define VOICE_BUFFER_DURATION_MS 3000
 

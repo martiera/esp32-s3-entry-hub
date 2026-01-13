@@ -39,7 +39,6 @@
 
 // System state
 unsigned long lastStatusUpdate = 0;
-unsigned long lastVoiceCheck = 0;
 unsigned long lastWeatherUpdate = 0;
 unsigned long lastPresenceUpdate = 0;
 unsigned long lastCalendarUpdate = 0;
@@ -47,10 +46,38 @@ unsigned long lastTimezoneUpdate = 0;
 bool systemReady = false;
 bool timezoneSet = false;
 
-// Voice command state
-bool isListeningForCommand = false;
-unsigned long listeningStartTime = 0;
-const unsigned long LISTENING_TIMEOUT_MS = 1200; // 1.2 seconds to speak command
+// Voice recording state machine
+enum VoiceState {
+    VOICE_IDLE,              // Waiting for trigger (loud sound)
+    VOICE_WAITING_SPEECH,    // Triggered, waiting for speech to start
+    VOICE_RECORDING,         // Recording speech
+    VOICE_PROCESSING         // Sending to STT
+};
+
+VoiceState voiceState = VOICE_IDLE;
+unsigned long voiceStateStartTime = 0;
+unsigned long lastSpeechTime = 0;        // Last time speech was detected
+unsigned long silenceStartTime = 0;      // When silence started
+
+// Voice recording configuration
+const unsigned long TRIGGER_COOLDOWN_MS = 300;          // Wait for trigger sound to fade before detecting speech
+const unsigned long WAIT_FOR_SPEECH_TIMEOUT_MS = 3000;  // 3 sec to start speaking (after cooldown)
+const unsigned long SILENCE_DURATION_MS = 700;          // 700ms silence = end of speech
+const unsigned long MIN_RECORDING_MS = 500;             // Minimum recording duration
+const unsigned long MAX_RECORDING_MS = 10000;           // Maximum 10 seconds
+const int16_t SPEECH_THRESHOLD = 500;                   // Audio level to consider as speech (16-bit samples)
+const int16_t SILENCE_THRESHOLD = 100;                  // Below this = silence (noise floor is ~20-30)
+const int16_t MIN_SPEECH_LEVEL = 300;                   // Minimum max level during RECORDING to send to STT
+
+// Popup auto-hide
+unsigned long popupHideTime = 0;
+bool popupShouldAutoHide = false;
+
+// Audio level monitoring
+int32_t totalAudioSamples = 0;
+int32_t maxAudioLevel = 0;
+int64_t sumAbsAudioLevel = 0;
+unsigned long lastAudioLevelLog = 0;
 
 // Forward declarations
 void setupSystem();
@@ -88,23 +115,50 @@ void setup() {
 }
 
 void loop() {
-    // Core system loops
+    // During voice recording, prioritize audio capture over UI updates
+    // LVGL updates can take 20-50ms and starve audio sampling
+    bool isVoiceActive = (voiceState == VOICE_WAITING_SPEECH || voiceState == VOICE_RECORDING);
+    
+    if (isVoiceActive) {
+        // Fast path: only do audio capture and minimal processing
+        handleVoiceRecognition();
+        haAssist.loop();  // Needed for state management
+        ledFeedback.loop();  // Visual feedback
+        
+        // Still need some LVGL ticks for the popup, but less frequently
+        static unsigned long lastLvglTick = 0;
+        if (millis() - lastLvglTick >= 100) {  // LVGL every 100ms during recording
+            lvglUI.loop();
+            lastLvglTick = millis();
+        }
+        return;
+    }
+    
+    // Core system loops (normal path when not recording)
     wifiMgr.loop();
     mqttClient.loop();
     otaManager.loop();
     webServer.loop();
     homeAssistant.loop();
+    haAssist.loop();
     lvglUI.loop();
     ledFeedback.loop();
     notificationManager.loop();
     
-    // Audio processing
+    // Audio processing for voice activity detection
     audioHandler.loop();
     voiceActivity.loop();
     
     // Voice recognition
     if (systemReady) {
         handleVoiceRecognition();
+    }
+    
+    // Auto-hide voice popup after timeout
+    if (popupShouldAutoHide && millis() >= popupHideTime) {
+        log_i("⏱️ Auto-hiding popup: now=%lu hideTime=%lu", millis(), popupHideTime);
+        lvglUI.hideVoicePopup();
+        popupShouldAutoHide = false;
     }
     
     // Periodic status updates
@@ -249,12 +303,35 @@ void setupSystem() {
     // 9. Display
     Serial.print("→ LVGL Display... ");
     lvglUI.begin();
+    
+    // Pre-create voice popup during setup so it's ready instantly (avoids blocking during recording)
+    lvglUI.showVoicePopup("", "");  // Create with empty text
+    lvglUI.hideVoicePopup();  // Hide it immediately
+    
     lvglUI.setVoiceButtonCallback([]() {
-        if (!isListeningForCommand && systemReady) {
-            log_i("Voice button pressed");
-            isListeningForCommand = true;
-            listeningStartTime = millis();
+        if (voiceState == VOICE_IDLE && systemReady) {
+            log_i("🎙️ Voice button pressed - waiting for speech");
+            
+            // Clear auto-hide flag AND timer immediately
+            popupShouldAutoHide = false;
+            popupHideTime = 0;
+            
+            // Start in WAITING_SPEECH state (same as voice trigger)
+            voiceState = VOICE_WAITING_SPEECH;
+            voiceStateStartTime = millis();
+            silenceStartTime = 0;
+            
+            // Reset audio monitoring
+            totalAudioSamples = 0;
+            maxAudioLevel = 0;
+            sumAbsAudioLevel = 0;
+            lastAudioLevelLog = millis();
+            
+            // Start recording
             haAssist.startRecording();
+            
+            // Show popup and LED
+            lvglUI.showVoicePopup("Listening...", "Speak now");
             ledFeedback.showListening();
         }
     });
@@ -355,18 +432,20 @@ void setupSystem() {
 
 // Callback for HA Assist results
 void onAssistResult(const char* transcription, const char* response, const char* error) {
-    isListeningForCommand = false;
+    voiceState = VOICE_IDLE;  // Reset state machine
     ledFeedback.showIdle();
     
     if (error) {
         Serial.printf("❌ Assist error: %s\n", error);
-        // // display.showNotification("Error", error);  // Disabled - using LVGL
+        lvglUI.showVoicePopup("Error", error);
+        popupHideTime = millis() + 3000;
+        popupShouldAutoHide = true;
         return;
     }
     
     if (!transcription || strlen(transcription) == 0) {
-        Serial.println("⚠️  No transcription received");
-        // // display.showNotification("Error", "No speech detected");  // Disabled - using LVGL
+        Serial.println("⚠️  No transcription received (empty text but success response)");
+        lvglUI.hideVoicePopup();
         return;
     }
     
@@ -379,30 +458,34 @@ void onAssistResult(const char* transcription, const char* response, const char*
     Serial.printf("You said: \"%s\"\n", trimmedTranscription.c_str());
     Serial.println("═══════════════════════════════════\n");
     
+    // Update popup with recognized text in large font
+    lvglUI.updateVoicePopupText(trimmedTranscription.c_str(), "");
+    
     // Update HA sensors
     homeAssistant.updateVoiceCommandSensor(trimmedTranscription.c_str());
     
     // Process command locally on ESP32
     processVoiceCommand(trimmedTranscription.c_str());
     
-    // Show on display
-    // // display.showNotification("Voice Command", trimmedTranscription.c_str());
+    // Schedule popup to hide after 3 seconds
+    popupHideTime = millis() + 3000;
+    popupShouldAutoHide = true;
+}
+
+// Helper to calculate max audio level in buffer
+int16_t getMaxAudioLevel(int16_t* buffer, size_t samples) {
+    int16_t maxLevel = 0;
+    for (size_t i = 0; i < samples; i++) {
+        int16_t absVal = abs(buffer[i]);
+        if (absVal > maxLevel) maxLevel = absVal;
+    }
+    return maxLevel;
 }
 
 void handleVoiceRecognition() {
-    // Check for audio input at regular intervals
     unsigned long now = millis();
     
-    // During recording, check more frequently (every 10ms) to capture all audio
-    // Otherwise check every 50ms for voice activity detection
-    unsigned long checkInterval = isListeningForCommand ? 10 : 50;
-    
-    if (now - lastVoiceCheck < checkInterval) {
-        return;
-    }
-    lastVoiceCheck = now;
-    
-    // Read audio samples
+    // Read audio samples (always, for both detection and recording)
     int16_t audioBuffer[512];
     size_t samplesRead = audioHandler.readAudio(audioBuffer, 512);
     
@@ -410,51 +493,158 @@ void handleVoiceRecognition() {
         return;
     }
     
-    // If we're listening for a command, feed audio to HA Assist
-    if (isListeningForCommand) {
-        haAssist.feedAudio(audioBuffer, samplesRead);
-        
-        unsigned long elapsed = now - listeningStartTime;
-        
-        // Check for timeout or silence (end of speech)
-        if (elapsed >= LISTENING_TIMEOUT_MS) {
-            Serial.printf("⏱️  Listening timeout reached at %lums (target: %lums), processing...\n", 
-                         elapsed, LISTENING_TIMEOUT_MS);
-            ledFeedback.showProcessing();
-            // display.showNotification("Voice", "Processing...");
-            haAssist.stopAndProcess();
-            isListeningForCommand = false;
-        }
-        return;
-    }
+    // Calculate current audio level
+    int16_t currentLevel = getMaxAudioLevel(audioBuffer, samplesRead);
     
-    // Process for voice activity detection (wake trigger)
-    if (voiceActivity.processAudioFrame(audioBuffer, samplesRead)) {
-        // Voice activity detected - start listening!
+    switch (voiceState) {
+        case VOICE_IDLE: {
+            // Check for voice activity trigger (loud sound)
+            if (voiceActivity.processAudioFrame(audioBuffer, samplesRead)) {
+                // Triggered! Start waiting for speech
+                voiceState = VOICE_WAITING_SPEECH;
+                voiceStateStartTime = now;
+                
+                // Show popup immediately
+                lvglUI.showVoicePopup("Listening...", "Speak now");
+                ledFeedback.showListening();
+                
+                // Reset audio monitoring
+                totalAudioSamples = 0;
+                maxAudioLevel = 0;
+                sumAbsAudioLevel = 0;
+                lastAudioLevelLog = now;
+                
+                // Start recording (to capture from beginning)
+                haAssist.startRecording();
+                
+                Serial.println("\n═══════════════════════════════════");
+                Serial.println("🎤 TRIGGERED! Waiting for speech...");
+                Serial.printf("Trigger level: %ld\n", voiceActivity.getLastAudioLevel());
+                Serial.println("═══════════════════════════════════\n");
+                
+                mqttClient.publishVoiceDetection("voice_activity");
+                webServer.broadcastMessage("voice_detected", "listening");
+            }
+            break;
+        }
         
-        Serial.println("\n═══════════════════════════════════");
-        Serial.println("🎤 VOICE ACTIVITY DETECTED!");
-        Serial.printf("Audio level: %ld\n", voiceActivity.getLastAudioLevel());
-        Serial.println("Waiting for command...");
-        Serial.println("═══════════════════════════════════\n");
+        case VOICE_WAITING_SPEECH: {
+            // Feed audio to recorder (capturing everything from trigger)
+            haAssist.feedAudio(audioBuffer, samplesRead);
+            totalAudioSamples += samplesRead;
+            
+            // Don't track maxAudioLevel here - only track during actual RECORDING
+            // The trigger spike would inflate the max and cause false positives
+            
+            unsigned long timeSinceTrigger = now - voiceStateStartTime;
+            
+            // Cooldown period: ignore audio levels while trigger sound fades out
+            if (timeSinceTrigger < TRIGGER_COOLDOWN_MS) {
+                // Still in cooldown, don't check for speech yet
+                // This prevents the trigger sound itself from being detected as speech
+                break;
+            }
+            
+            // After cooldown, check if speech started (audio above threshold)
+            if (currentLevel > SPEECH_THRESHOLD) {
+                voiceState = VOICE_RECORDING;
+                lastSpeechTime = now;
+                silenceStartTime = 0;
+                
+                // Reset maxAudioLevel for RECORDING phase only
+                // (don't count the initial trigger spike)
+                maxAudioLevel = currentLevel;
+                
+                Serial.printf("🗣️  Speech detected! Level: %d, starting recording (after %.1fs cooldown)...\n", 
+                             currentLevel, timeSinceTrigger / 1000.0f);
+            }
+            
+            // Timeout - no speech detected, cancel without sending to STT
+            if (timeSinceTrigger > (TRIGGER_COOLDOWN_MS + WAIT_FOR_SPEECH_TIMEOUT_MS)) {
+                Serial.println("⏱️  Timeout waiting for speech (3s + cooldown), cancelling...");
+                
+                haAssist.cancelRecording();  // Discard audio, don't send to STT
+                lvglUI.hideVoicePopup();
+                ledFeedback.showIdle();
+                voiceState = VOICE_IDLE;
+            }
+            break;
+        }
         
-        // Notify systems
-        mqttClient.publishVoiceDetection("voice_activity");
-        webServer.broadcastMessage("voice_detected", "listening");
-        // display.showWakeWordDetected();
-        ledFeedback.showListening();
+        case VOICE_RECORDING: {
+            // Feed audio to recorder
+            haAssist.feedAudio(audioBuffer, samplesRead);
+            totalAudioSamples += samplesRead;
+            
+            // Track max level for stats
+            if (currentLevel > maxAudioLevel) maxAudioLevel = currentLevel;
+            
+            // Log progress every 200ms
+            if (now - lastAudioLevelLog >= 200) {
+                float duration = (float)totalAudioSamples / 16000.0f;
+                Serial.printf("🎤 Recording: %.1fs, level=%d, max=%ld\n", duration, currentLevel, maxAudioLevel);
+                lastAudioLevelLog = now;
+            }
+            
+            // Check for speech vs silence
+            if (currentLevel > SILENCE_THRESHOLD) {
+                // Still speaking (or at least some audio)
+                lastSpeechTime = now;
+                silenceStartTime = 0;
+            } else {
+                // Silence detected (below noise floor)
+                if (silenceStartTime == 0) {
+                    silenceStartTime = now;
+                }
+            }
+            
+            unsigned long recordingDuration = now - voiceStateStartTime;
+            unsigned long silenceDuration = (silenceStartTime > 0) ? (now - silenceStartTime) : 0;
+            
+            // End recording conditions:
+            // 1. Silence detected for SILENCE_DURATION_MS (and min recording met)
+            // 2. Max recording duration reached
+            bool silenceEnd = (silenceDuration >= SILENCE_DURATION_MS) && (recordingDuration >= MIN_RECORDING_MS);
+            bool maxTimeEnd = (recordingDuration >= MAX_RECORDING_MS);
+            
+            if (silenceEnd || maxTimeEnd) {
+                float duration = (float)totalAudioSamples / 16000.0f;
+                
+                if (silenceEnd) {
+                    Serial.printf("🔇 Silence detected, ending recording (%.1fs, %ld samples, max=%ld)\n", duration, totalAudioSamples, maxAudioLevel);
+                } else {
+                    Serial.printf("⏱️  Max recording time reached (%.1fs, %ld samples, max=%ld)\n", duration, totalAudioSamples, maxAudioLevel);
+                }
+                
+                // Check if recording had actual speech (not just silence)
+                if (maxAudioLevel < MIN_SPEECH_LEVEL) {
+                    Serial.printf("⚠️  No speech detected in recording (max level %ld < %d), cancelling...\n", maxAudioLevel, MIN_SPEECH_LEVEL);
+                    haAssist.cancelRecording();  // Discard audio, don't send to STT
+                    lvglUI.hideVoicePopup();
+                    ledFeedback.showIdle();
+                    voiceState = VOICE_IDLE;
+                } else if (totalAudioSamples < 3200) {  // Less than 0.2s
+                    Serial.println("⚠️  Recording too short, cancelling...");
+                    haAssist.cancelRecording();  // Discard audio, don't send to STT
+                    lvglUI.hideVoicePopup();
+                    ledFeedback.showIdle();
+                    voiceState = VOICE_IDLE;
+                } else {
+                    // Process the recording
+                    voiceState = VOICE_PROCESSING;
+                    lvglUI.updateVoicePopupText("Processing...", "");
+                    ledFeedback.showProcessing();
+                    haAssist.stopAndProcess();
+                }
+            }
+            break;
+        }
         
-        // Small delay to let person take a breath before speaking command
-        delay(250);
-        
-        Serial.println("Now listening for command...");
-        
-        // Start recording for HA Assist
-        isListeningForCommand = true;
-        listeningStartTime = millis();  // Use current time after delay
-        haAssist.startRecording();
-        
-        // Don't feed the wake audio - start fresh after the delay
+        case VOICE_PROCESSING: {
+            // Just wait for callback - haAssist handles processing
+            // State will be reset in onAssistResult callback
+            break;
+        }
     }
 }
 

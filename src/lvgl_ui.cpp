@@ -12,6 +12,9 @@ extern const lv_img_dsc_t bg_image;
 // Weather icons
 #include "weather_icons/weather_icons.h"
 
+// Gate icons
+#include "gate_icons/gate_icons.h"
+
 LVGL_UI lvglUI;
 LVGL_UI* LVGL_UI::instance = nullptr;
 
@@ -41,7 +44,12 @@ LVGL_UI::LVGL_UI()
     : touch(&Wire, TOUCH_INT),
       currentScreen(SCREEN_MAIN),
       personCount(0),
-      voiceCallback(nullptr) {
+      voiceCallback(nullptr),
+      voicePopupOverlay(nullptr),
+      voicePopupContainer(nullptr),
+      voicePopupStatusLabel(nullptr),
+      voicePopupSubtitleLabel(nullptr),
+      voicePopupAnimation(nullptr) {
     instance = this;
     
     for (int i = 0; i < SCREEN_COUNT; i++) {
@@ -132,7 +140,6 @@ bool LVGL_UI::begin() {
 
 void LVGL_UI::loop() {
     lv_timer_handler();
-    delay(5);
     
     // Update time display every second
     static unsigned long lastTimeUpdate = 0;
@@ -156,8 +163,13 @@ void LVGL_UI::updateTime() {
     strftime(hoursStr, sizeof(hoursStr), "%H", &timeinfo);
     strftime(minutesStr, sizeof(minutesStr), "%M", &timeinfo);
     
-    lv_label_set_text(timeLabel, hoursStr);       // Hours in cyan
-    lv_label_set_text(minutesLabel, minutesStr);  // Minutes in white
+    // Only update labels if text actually changed (avoids unnecessary redraws)
+    if (strcmp(lv_label_get_text(timeLabel), hoursStr) != 0) {
+        lv_label_set_text(timeLabel, hoursStr);
+    }
+    if (strcmp(lv_label_get_text(minutesLabel), minutesStr) != 0) {
+        lv_label_set_text(minutesLabel, minutesStr);
+    }
 }
 
 void LVGL_UI::createMainScreen() {
@@ -181,28 +193,20 @@ void LVGL_UI::createMainScreen() {
     lv_obj_set_style_img_recolor_opa(bgImage, LV_OPA_TRANSP, 0);
     
     // ========== GATE (Top Left: 96x80) ==========
-    gateContainer = lv_obj_create(screens[SCREEN_MAIN]);
+    gateContainer = lv_btn_create(screens[SCREEN_MAIN]);  // Make it a button
     lv_obj_set_size(gateContainer, 96, 80);
     lv_obj_set_pos(gateContainer, 0, 0);
-    lv_obj_set_style_bg_opa(gateContainer, LV_OPA_70, 0);
-    lv_obj_set_style_bg_color(gateContainer, lv_color_hex(0x1a1a2e), 0);
+    lv_obj_set_style_bg_opa(gateContainer, LV_OPA_TRANSP, 0);  // Transparent
     lv_obj_set_style_radius(gateContainer, 12, 0);
     lv_obj_set_style_border_width(gateContainer, 0, 0);
     lv_obj_clear_flag(gateContainer, LV_OBJ_FLAG_SCROLLABLE);
+    // TODO: Add event callback for gate button click
     
-    gateIcon = lv_obj_create(gateContainer);
-    lv_obj_set_size(gateIcon, 40, 40);
-    lv_obj_set_style_radius(gateIcon, 20, 0);
-    lv_obj_set_style_bg_color(gateIcon, lv_color_hex(0x505672), 0);
+    gateIcon = lv_img_create(gateContainer);
+    lv_img_set_src(gateIcon, &gate_close);  // Default to closed
     lv_obj_set_style_border_width(gateIcon, 0, 0);
-    lv_obj_align(gateIcon, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_center(gateIcon);  // Center the icon in the button
     lv_obj_clear_flag(gateIcon, LV_OBJ_FLAG_SCROLLABLE);
-    
-    gateStatusLabel = lv_label_create(gateContainer);
-    lv_label_set_text(gateStatusLabel, "Gate");
-    lv_obj_set_style_text_font(gateStatusLabel, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(gateStatusLabel, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(gateStatusLabel, LV_ALIGN_BOTTOM_MID, 0, -5);
     
     // ========== CALENDAR CARD (Center top: 384x80 full width between gate and time) ==========
     calendarContainer = lv_btn_create(screens[SCREEN_MAIN]);  // Make it a button
@@ -473,10 +477,6 @@ void LVGL_UI::updateWeather(float temp, const char* condition) {
     lv_obj_clear_flag(weatherIcon, LV_OBJ_FLAG_HIDDEN);
     
     lv_label_set_text(conditionLabel, displayCondition);
-    
-    // Force screen update
-    lv_obj_invalidate(weatherIcon);
-    lv_obj_invalidate(weatherContainer);
 }
 
 void LVGL_UI::updatePersonPresence(int personIndex, const char* name, bool present, uint32_t color) {
@@ -503,9 +503,6 @@ void LVGL_UI::updatePersonPresence(int personIndex, const char* name, bool prese
             lv_obj_set_style_text_color(personLabels[personIndex], lv_color_hex(0x808080), 0);
         }
         lv_label_set_text(personLabels[personIndex], name);
-        
-        // Force screen update
-        lv_obj_invalidate(personCards[personIndex]);
     }
 }
 
@@ -597,9 +594,6 @@ void LVGL_UI::updateCalendar(CalendarEvent* events, int eventCount) {
         }
         lv_obj_clear_flag(calendarMoreButton, LV_OBJ_FLAG_HIDDEN);  // Show badge
     }
-    
-    // Force screen update
-    lv_obj_invalidate(calendarContainer);
 }
 
 void LVGL_UI::setAnyoneHome(bool isHome) {
@@ -613,10 +607,10 @@ void LVGL_UI::updateGateStatus(bool isOpen) {
     
     if (isOpen) {
         lv_label_set_text(gateStatusLabel, "Open");
-        lv_obj_set_style_bg_color(gateIcon, lv_color_hex(0x22c55e), 0);  // Green
+        lv_img_set_src(gateIcon, &gate_open);  // Show open gate image
     } else {
         lv_label_set_text(gateStatusLabel, "Closed");
-        lv_obj_set_style_bg_color(gateIcon, lv_color_hex(0xef4444), 0);  // Red
+        lv_img_set_src(gateIcon, &gate_close);  // Show closed gate image
     }
 }
 
@@ -676,5 +670,101 @@ void LVGL_UI::screen_gesture_cb(lv_event_t* e) {
         // Swipe right - previous screen
         int prev = (instance->currentScreen - 1 + SCREEN_COUNT) % SCREEN_COUNT;
         instance->showScreen((ScreenID)prev);
+    }
+}
+
+void LVGL_UI::showVoicePopup(const char* statusText, const char* subtitle) {
+    // Create overlay (semi-transparent background) if it doesn't exist
+    if (!voicePopupOverlay) {
+        voicePopupOverlay = lv_obj_create(lv_scr_act());
+        lv_obj_set_size(voicePopupOverlay, SCREEN_WIDTH, SCREEN_HEIGHT);
+        lv_obj_set_pos(voicePopupOverlay, 0, 0);
+        lv_obj_set_style_bg_color(voicePopupOverlay, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_bg_opa(voicePopupOverlay, LV_OPA_70, 0);  // 70% opacity
+        lv_obj_set_style_border_width(voicePopupOverlay, 0, 0);
+        lv_obj_clear_flag(voicePopupOverlay, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(voicePopupOverlay, LV_OBJ_FLAG_FLOATING);  // Float above all content
+        
+        // Create popup container (centered, large card)
+        voicePopupContainer = lv_obj_create(voicePopupOverlay);
+        lv_obj_set_size(voicePopupContainer, 400, 240);  // Large size for visibility from distance
+        lv_obj_center(voicePopupContainer);
+        lv_obj_set_style_bg_color(voicePopupContainer, lv_color_hex(0x1a1a2e), 0);
+        lv_obj_set_style_bg_opa(voicePopupContainer, LV_OPA_90, 0);
+        lv_obj_set_style_radius(voicePopupContainer, 20, 0);
+        lv_obj_set_style_border_width(voicePopupContainer, 3, 0);
+        lv_obj_set_style_border_color(voicePopupContainer, lv_color_hex(0x3b82f6), 0);  // Blue border
+        lv_obj_set_style_shadow_width(voicePopupContainer, 30, 0);
+        lv_obj_set_style_shadow_color(voicePopupContainer, lv_color_hex(0x3b82f6), 0);
+        lv_obj_set_style_shadow_opa(voicePopupContainer, LV_OPA_50, 0);
+        lv_obj_clear_flag(voicePopupContainer, LV_OBJ_FLAG_SCROLLABLE);
+        
+        // Animated pulsing indicator (circle at top)
+        voicePopupAnimation = lv_obj_create(voicePopupContainer);
+        lv_obj_set_size(voicePopupAnimation, 60, 60);
+        lv_obj_align(voicePopupAnimation, LV_ALIGN_TOP_MID, 0, 20);  // Center horizontally
+        lv_obj_set_style_radius(voicePopupAnimation, 30, 0);  // Circular
+        lv_obj_set_style_bg_color(voicePopupAnimation, lv_color_hex(0x3b82f6), 0);  // Blue
+        lv_obj_set_style_border_width(voicePopupAnimation, 0, 0);
+        lv_obj_clear_flag(voicePopupAnimation, LV_OBJ_FLAG_SCROLLABLE);
+        
+        // Add audio icon to the circle
+        lv_obj_t* audioIcon = lv_label_create(voicePopupAnimation);
+        lv_label_set_text(audioIcon, LV_SYMBOL_AUDIO);
+        lv_obj_set_style_text_font(audioIcon, &lv_font_montserrat_32, 0);
+        lv_obj_set_style_text_color(audioIcon, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_center(audioIcon);
+        
+        // Status label (large text: "Listening", "Processing", etc.)
+        voicePopupStatusLabel = lv_label_create(voicePopupContainer);
+        lv_label_set_text(voicePopupStatusLabel, statusText);
+        lv_obj_set_style_text_font(voicePopupStatusLabel, &lv_font_montserrat_48, 0);
+        lv_obj_set_style_text_color(voicePopupStatusLabel, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_align(voicePopupStatusLabel, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(voicePopupStatusLabel, 0, 100);
+        lv_obj_set_width(voicePopupStatusLabel, 400);
+        lv_obj_align(voicePopupStatusLabel, LV_ALIGN_TOP_MID, 0, 100);
+        
+        // Subtitle label (recognized words or additional info)
+        voicePopupSubtitleLabel = lv_label_create(voicePopupContainer);
+        if (subtitle && strlen(subtitle) > 0) {
+            lv_label_set_text(voicePopupSubtitleLabel, subtitle);
+        } else {
+            lv_label_set_text(voicePopupSubtitleLabel, "");
+        }
+        lv_obj_set_style_text_font(voicePopupSubtitleLabel, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_color(voicePopupSubtitleLabel, lv_color_hex(0xB0B0B0), 0);
+        lv_obj_set_style_text_align(voicePopupSubtitleLabel, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(voicePopupSubtitleLabel, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(voicePopupSubtitleLabel, 360);
+        lv_obj_align(voicePopupSubtitleLabel, LV_ALIGN_TOP_MID, 0, 165);
+    } else {
+        // Update existing popup
+        updateVoicePopupText(statusText, subtitle);
+        uint32_t flags_before = lv_obj_get_state(voicePopupOverlay);
+        lv_obj_clear_flag(voicePopupOverlay, LV_OBJ_FLAG_HIDDEN);
+        uint32_t flags_after = lv_obj_get_state(voicePopupOverlay);
+        log_i("📱 Popup updated: flags before=%lu after=%lu", flags_before, flags_after);
+    }
+}
+
+void LVGL_UI::hideVoicePopup() {
+    if (voicePopupOverlay) {
+        log_i("🚫 Hiding popup");
+        lv_obj_add_flag(voicePopupOverlay, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void LVGL_UI::updateVoicePopupText(const char* statusText, const char* subtitle) {
+    if (voicePopupStatusLabel) {
+        lv_label_set_text(voicePopupStatusLabel, statusText);
+    }
+    
+    if (voicePopupSubtitleLabel) {
+        if (subtitle && strlen(subtitle) > 0) {
+            lv_label_set_text(voicePopupSubtitleLabel, subtitle);
+        } else {
+            lv_label_set_text(voicePopupSubtitleLabel, "");
+        }
     }
 }

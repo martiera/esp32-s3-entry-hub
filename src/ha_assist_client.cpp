@@ -159,6 +159,12 @@ bool HAAssistClient::stopAndProcess() {
     return processVoice(_recordBuffer, _recordIndex);
 }
 
+void HAAssistClient::cancelRecording() {
+    log_i("HAAssist: Cancelling recording, discarding %d samples", _recordIndex);
+    _recordIndex = 0;
+    _state = ASSIST_IDLE;
+}
+
 bool HAAssistClient::processVoice(const int16_t* audioBuffer, size_t sampleCount) {
     if (!WiFi.isConnected()) {
         _lastError = "WiFi not connected";
@@ -381,7 +387,10 @@ bool HAAssistClient::parseSTTResponse(const String& response) {
     }
     
     log_i("HAAssist: Transcription: '%s'", _lastTranscription.c_str());
-    return _lastTranscription.length() > 0;
+    
+    // Return true even if transcription is empty - let the callback handle it
+    // Empty transcription with success response is valid (no speech detected)
+    return true;
 }
 
 bool HAAssistClient::sendToConversation(const char* text) {

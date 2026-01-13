@@ -104,7 +104,9 @@ size_t AudioHandler::readAudio(int16_t* buffer, size_t samples) {
     // Read 32-bit samples from INMP441
     int32_t raw32[samples];
     size_t bytesRead = 0;
-    esp_err_t result = i2s_read(I2S_PORT, raw32, samples * sizeof(int32_t), &bytesRead, 100);
+    // Use 50ms timeout to allow DMA buffer to fill with more samples
+    // At 16kHz, 50ms = 800 samples, which should fill our 512 sample buffer
+    esp_err_t result = i2s_read(I2S_PORT, raw32, samples * sizeof(int32_t), &bytesRead, 50);
     
     if (result == ESP_OK && bytesRead > 0) {
         size_t samplesRead = bytesRead / sizeof(int32_t);

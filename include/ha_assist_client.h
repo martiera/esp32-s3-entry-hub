@@ -65,6 +65,11 @@ public:
     bool stopAndProcess();
     
     /**
+     * Cancel recording without processing (discard audio)
+     */
+    void cancelRecording();
+    
+    /**
      * Send text directly to conversation API (skip STT)
      * Useful for touch/text input
      * 

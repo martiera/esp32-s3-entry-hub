@@ -54,6 +54,11 @@ public:
     // Voice button callback
     void setVoiceButtonCallback(void (*callback)());
     
+    // Voice popup for showing listening/processing status
+    void showVoicePopup(const char* statusText, const char* subtitle = nullptr);
+    void hideVoicePopup();
+    void updateVoicePopupText(const char* statusText, const char* subtitle = nullptr);
+    
 private:
     TFT_eSPI tft;
     FT6X36 touch;
@@ -95,6 +100,13 @@ private:
     
     // Voice button (small, bottom right)
     lv_obj_t* voiceButton;
+    
+    // Voice popup overlay
+    lv_obj_t* voicePopupOverlay;    // Semi-transparent background
+    lv_obj_t* voicePopupContainer;  // Main popup container
+    lv_obj_t* voicePopupStatusLabel; // "Listening" / "Processing" text
+    lv_obj_t* voicePopupSubtitleLabel; // Recognized words / secondary text
+    lv_obj_t* voicePopupAnimation;  // Animated indicator (pulsing circle)
     
     // Calendar card (top right below time)
     lv_obj_t* calendarContainer;
